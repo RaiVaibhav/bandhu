@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bandhu — RAG Components</title>
+<style>
+  :root{
+    --bg:#F6F4EF; --surface:#FFFFFF; --ink:#21231F; --muted:#6E7268; --border:#DEDACE;
+    --accent:#3E6B5E; --accent-soft:#E4ECE8; --amber:#A8672E; --amber-soft:#F3E7D6;
+    --crisis:#9B3B34; --crisis-soft:#F5E2DF; --violet:#5C5378; --violet-soft:#EBE8F2;
+    --blue:#3B5E7A; --blue-soft:#E3EBF1;
+    --shadow: 0 1px 2px rgba(33,35,31,0.06), 0 1px 1px rgba(33,35,31,0.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17181A; --surface:#1E201C; --ink:#EDEAE2; --muted:#9B9C8F; --border:#34362F;
+      --accent:#79AC9B; --accent-soft:#22322B; --amber:#D68A4C; --amber-soft:#392A18;
+      --crisis:#DD8981; --crisis-soft:#3A211E; --violet:#B2A8D6; --violet-soft:#2A2638;
+      --blue:#8FB4D1; --blue-soft:#1F2C36;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17181A; --surface:#1E201C; --ink:#EDEAE2; --muted:#9B9C8F; --border:#34362F;
+    --accent:#79AC9B; --accent-soft:#22322B; --amber:#D68A4C; --amber-soft:#392A18;
+    --crisis:#DD8981; --crisis-soft:#3A211E; --violet:#B2A8D6; --violet-soft:#2A2638;
+    --blue:#8FB4D1; --blue-soft:#1F2C36;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  :root[data-theme="light"]{
+    --bg:#F6F4EF; --surface:#FFFFFF; --ink:#21231F; --muted:#6E7268; --border:#DEDACE;
+    --accent:#3E6B5E; --accent-soft:#E4ECE8; --amber:#A8672E; --amber-soft:#F3E7D6;
+    --crisis:#9B3B34; --crisis-soft:#F5E2DF; --violet:#5C5378; --violet-soft:#EBE8F2;
+    --blue:#3B5E7A; --blue-soft:#E3EBF1;
+    --shadow: 0 1px 2px rgba(33,35,31,0.06);
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; line-height:1.5; }
+  .wrap{ max-width:1180px; margin:0 auto; padding: 48px 28px 96px; }
+  h1,h2,h3{ font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-weight:600; text-wrap:balance; color:var(--ink); margin:0; }
+
+  header.top{ margin-bottom:36px; border-bottom:1px solid var(--border); padding-bottom:28px; }
+  header.top .eyebrow{ font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:10px; }
+  header.top h1{ font-size:32px; margin-bottom:10px; }
+  header.top p{ color:var(--muted); font-size:15px; max-width:72ch; margin:0 0 6px; }
+
+  section{ margin-top:52px; }
+  section > .section-head{ margin-bottom:20px; }
+  section > .section-head h2{ font-size:22px; }
+  section > .section-head p{ color:var(--muted); font-size:13.5px; margin:6px 0 0; max-width:74ch; }
+
+  /* ---------- stores strip ---------- */
+  .stores{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:16px; }
+  .store{ border-radius:12px; padding:18px 20px; border:1.5px solid; }
+  .store.vector{ border-color:var(--accent); background:var(--accent-soft); }
+  .store.memory{ border-color:var(--violet); background:var(--violet-soft); }
+  .store.miti{ border-color:var(--blue); background:var(--blue-soft); }
+  .store .label{ font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:8px; }
+  .store.vector .label{ color:var(--accent); }
+  .store.memory .label{ color:var(--violet); }
+  .store.miti .label{ color:var(--blue); }
+  .store h3{ font-size:15px; margin-bottom:6px; }
+  .store p{ margin:0; font-size:13px; color:var(--ink); opacity:0.85; line-height:1.5; }
+  .store .meta{ margin-top:10px; font-size:11.5px; color:var(--muted); }
+
+  /* ---------- annotated spine ---------- */
+  .spine-wrap{ display:grid; grid-template-columns: 44px 1fr; column-gap:16px; }
+  .spine-line{ position:relative; }
+  .spine-line::before{ content:""; position:absolute; left:21px; top:8px; bottom:8px; width:2px; background:var(--border); }
+  .srow{ display:grid; grid-template-columns: 44px 1fr; column-gap:16px; margin-bottom:14px; }
+  .srow:last-child{ margin-bottom:0; }
+  .snum{ position:relative; width:44px; height:44px; border-radius:50%; background:var(--surface); border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:var(--muted); font-variant-numeric:tabular-nums; z-index:1; }
+  .srow.touch .snum{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .scard{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 16px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:6px; }
+  .scard .stage-name{ font-size:13.5px; font-weight:700; }
+  .scard .muted-note{ font-size:12px; color:var(--muted); font-style:italic; }
+  .rag-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .rag-chip{ font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:20px; border:1px solid; }
+  .rag-chip.vector{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .rag-chip.memory{ border-color:var(--violet); color:var(--violet); background:var(--violet-soft); }
+  .rag-chip.miti{ border-color:var(--blue); color:var(--blue); background:var(--blue-soft); }
+  .rag-chip.rule{ border-color:var(--border); color:var(--ink); background:var(--bg); }
+
+  /* ---------- component cards ---------- */
+  .components{ display:flex; flex-direction:column; gap:14px; }
+  .component{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 22px; box-shadow:var(--shadow); display:grid; grid-template-columns: 230px 1fr; gap:20px; align-items:start; }
+  .component .head{ display:flex; flex-direction:column; gap:6px; }
+  .component .head .kind{ font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; padding:2px 8px; border-radius:20px; width:fit-content; }
+  .kind.vector{ background:var(--accent-soft); color:var(--accent); }
+  .kind.memory{ background:var(--violet-soft); color:var(--violet); }
+  .kind.miti{ background:var(--blue-soft); color:var(--blue); }
+  .kind.compute{ background:var(--amber-soft); color:var(--amber); }
+  .component .head h3{ font-size:16px; }
+  .component .body p{ margin:0 0 8px; font-size:13.5px; color:var(--muted); line-height:1.55; }
+  .component .body p:last-child{ margin-bottom:0; }
+  .used-at{ display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+  .used-at .tag{ font-size:11px; font-weight:600; padding:2px 9px; border-radius:20px; background:var(--bg); border:1px solid var(--border); color:var(--ink); }
+  @media (max-width:760px){ .component{ grid-template-columns:1fr; } }
+
+  footer{ margin-top:56px; padding-top:20px; border-top:1px solid var(--border); font-size:12.5px; color:var(--muted); }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow">Bandhu — RAG Reference</div>
+    <h1>RAG components, and exactly where each one plugs in</h1>
+    <p>Companion to <em>docs/pipeline.html</em>. That doc numbers 12 stages; this doc takes each RAG-relevant piece of infrastructure and says precisely which numbered stage it belongs to — not just "retrieval happens somewhere in the middle."</p>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <h2>Three separate stores — don't conflate them</h2>
+      <p>The easiest way to lose clarity on a RAG system is treating "the data" as one thing. Bandhu has three, and they never share a code path.</p>
+    </div>
+    <div class="stores">
+      <div class="store vector">
+        <div class="label">Vector database</div>
+        <h3>Content Library (pgvector)</h3>
+        <p>Vetted, short, human-reviewed entries — grounding techniques, reframes, thinking-trap psychoeducation. Static-ish, updated rarely, shared across every user.</p>
+        <div class="meta">Built from <code>knowledge-base/vetted/</code>. Embedded once, queried on every eligible check-in.</div>
+      </div>
+      <div class="store memory">
+        <div class="label">Structured store</div>
+        <h3>Per-user Memory</h3>
+        <p>Small, per-person facts: mood tag, theme, last suggestion + outcome, rolling help-offer count, and the Summarizer's rolling narrative. Updated every check-in.</p>
+        <div class="meta">Never embedded, never vector-searched — read/written directly by row/stage number.</div>
+      </div>
+      <div class="store miti">
+        <div class="label">Reference corpus</div>
+        <h3>MITI Rubric</h3>
+        <p>The tone-scoring rubric (not retrievable content) — used only by the sampled evaluator to grade a response after the fact. Never touches a live reply before it's sent.</p>
+        <div class="meta">From <code>knowledge-base/sources/miti-manual/</code>. Async only.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>The pipeline, annotated by what touches RAG</h2>
+      <p>Same 12 stages and numbering as <em>docs/pipeline.html</em>. Stages with a highlighted number touch one of the three stores above or a RAG-specific process; muted stages are pure logic and don't.</p>
+    </div>
+
+    <div class="spine-wrap">
+      <div></div>
+      <div></div>
+    </div>
+    <div style="display:flex; flex-direction:column;">
+
+      <div class="srow">
+        <div class="snum">1</div>
+        <div class="scard"><div class="stage-name">Ingest &amp; normalize</div><div class="muted-note">No RAG component — language detection and format handling only.</div></div>
+      </div>
+      <div class="srow">
+        <div class="snum">2</div>
+        <div class="scard"><div class="stage-name">Safety gate</div><div class="muted-note">Deliberately not RAG — rules-based keyword/pattern matching only, for auditability. No embeddings, no vector search, ever.</div></div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">3</div>
+        <div class="scard">
+          <div class="stage-name">Classify</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">Produces the emotion·category·intensity tag that pre-filters stage 6's vector search. The special-case branch here also does a direct, non-vector lookup into the Content Library's fixed redirect templates.</p>
+          <div class="rag-chips">
+            <span class="rag-chip vector">feeds Retrieval's pre-filter</span>
+            <span class="rag-chip vector">special-case branch → fixed templates, no embedding involved</span>
+          </div>
+        </div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">4</div>
+        <div class="scard">
+          <div class="stage-name">Memory read</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">Reads the per-user structured store directly, plus stage 11's rolling narrative.</p>
+          <div class="rag-chips"><span class="rag-chip memory">Per-user Memory store</span></div>
+        </div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">5</div>
+        <div class="scard">
+          <div class="stage-name">Eligibility gate</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">Reads the rolling help-offer count from the same structured store — no new component, same one as stage 4.</p>
+          <div class="rag-chips"><span class="rag-chip memory">Per-user Memory store</span></div>
+        </div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">6</div>
+        <div class="scard">
+          <div class="stage-name">Retrieval</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">The core RAG operation. Embeds the check-in text, checks the cache, queries pgvector filtered by stage 3's tag, returns top 2-3 chunks.</p>
+          <div class="rag-chips">
+            <span class="rag-chip vector">Embedding model</span>
+            <span class="rag-chip vector">Vector database</span>
+            <span class="rag-chip vector">Cache (Redis/Upstash)</span>
+          </div>
+        </div>
+      </div>
+      <div class="srow">
+        <div class="snum">7</div>
+        <div class="scard"><div class="stage-name">Orchestrator</div><div class="muted-note">Consumes stage 6's output, adds no new component — except the Thinking Trap branch, which re-invokes Retrieval with a pattern-specific filter instead of the general tag.</div></div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">8</div>
+        <div class="scard">
+          <div class="stage-name">Generate</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">The fast/cheap phrasing model — constrained to only use what stage 6 retrieved. This is the "generation" half of retrieval-augmented generation.</p>
+          <div class="rag-chips"><span class="rag-chip vector">Generation model</span></div>
+        </div>
+      </div>
+      <div class="srow">
+        <div class="snum">9</div>
+        <div class="scard"><div class="stage-name">Guardrail check</div><div class="muted-note">Pure rule engine — not a data component. Fixed-template content was already resolved upstream at stage 3's branch.</div></div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">10</div>
+        <div class="scard">
+          <div class="stage-name">Memory write → response</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">Writes the new structured fact to the per-user store — the raw material stage 11 later synthesizes.</p>
+          <div class="rag-chips"><span class="rag-chip memory">Per-user Memory store</span></div>
+        </div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">11</div>
+        <div class="scard">
+          <div class="stage-name">Summarizer</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">Reads the structured store's accumulated facts, writes back a short rolling narrative — the thing stage 4 actually reads on the next check-in.</p>
+          <div class="rag-chips"><span class="rag-chip memory">Per-user Memory store</span></div>
+        </div>
+      </div>
+      <div class="srow touch">
+        <div class="snum">12</div>
+        <div class="scard">
+          <div class="stage-name">Sampled evaluator</div>
+          <p style="margin:0; font-size:13px; color:var(--muted);">The only stage that touches the MITI rubric. Scores a sample of already-sent responses — never in the live path.</p>
+          <div class="rag-chips"><span class="rag-chip miti">MITI Rubric corpus</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Component reference</h2>
+      <p>Same components as above, described in full, each tagged with exactly which stage(s) call it — the reverse lookup.</p>
+    </div>
+    <div class="components">
+
+      <div class="component">
+        <div class="head">
+          <span class="kind vector">Vector store</span>
+          <h3>Content Library</h3>
+        </div>
+        <div class="body">
+          <p>Short, 1-3 sentence, human-reviewed entries — never paragraphs pulled wholesale from a source document. Two distinct kinds live here: general retrievable entries (tagged, embedded, found by similarity) and fixed redirect templates (medical doubt, disorder questions, medication questions, medical-document handling — looked up directly by category, never embedded or searched).</p>
+          <div class="used-at"><span class="tag">Stage 3 — special-case lookup</span><span class="tag">Stage 6 — Retrieval</span><span class="tag">Thinking Trap re-entry</span></div>
+        </div>
+      </div>
+
+      <div class="component">
+        <div class="head">
+          <span class="kind compute">Compute</span>
+          <h3>Embedding model</h3>
+        </div>
+        <div class="body">
+          <p>Turns text into a vector once, at corpus build time, for every Content Library entry (offline, one-time cost). Turns the live check-in text into a vector at query time — one small, cheap call per check-in.</p>
+          <div class="used-at"><span class="tag">Stage 6 — Retrieval</span><span class="tag">Thinking Trap re-entry</span></div>
+        </div>
+      </div>
+
+      <div class="component">
+        <div class="head">
+          <span class="kind vector">Vector store</span>
+          <h3>Vector database (pgvector)</h3>
+        </div>
+        <div class="body">
+          <p>Holds the Content Library's embedded, tagged entries. Queried with metadata pre-filtering (emotion/category/intensity/language) before similarity search runs, so <code>top_k</code> can stay small — 2-3 results, never a long list.</p>
+          <div class="used-at"><span class="tag">Stage 6 — Retrieval</span><span class="tag">Thinking Trap re-entry</span></div>
+        </div>
+      </div>
+
+      <div class="component">
+        <div class="head">
+          <span class="kind compute">Compute</span>
+          <h3>Cache (Redis/Upstash)</h3>
+        </div>
+        <div class="body">
+          <p>Stores embedding + retrieval results for common or near-duplicate check-ins, with a similarity threshold to reuse a cached result instead of re-embedding. Sits directly in front of the vector database — a cache hit skips both the embedding call and the pgvector query.</p>
+          <div class="used-at"><span class="tag">Stage 6 — Retrieval</span></div>
+        </div>
+      </div>
+
+      <div class="component">
+        <div class="head">
+          <span class="kind memory">Structured store</span>
+          <h3>Per-user Memory</h3>
+        </div>
+        <div class="body">
+          <p>Not embedded, not vector-searched — a small structured record per person: current mood tag, recurring theme, last suggestion offered + whether it helped, and the rolling help-offer count the eligibility gate reads. Written every check-in, never grows into a raw transcript.</p>
+          <div class="used-at"><span class="tag">Stage 4 — read</span><span class="tag">Stage 5 — eligibility count</span><span class="tag">Stage 10 — write</span><span class="tag">Stage 11 — Summarizer input</span></div>
+        </div>
+      </div>
+
+      <div class="component">
+        <div class="head">
+          <span class="kind compute">Compute · periodic</span>
+          <h3>Summarizer</h3>
+        </div>
+        <div class="body">
+          <p>Not per-message. Runs on its own schedule (still undecided — see open items in <em>pipeline.html</em>) over the accumulated structured facts, and writes back a short rolling narrative. This is what lets a pattern from Monday actually inform Wednesday's response, and what "Let's look" / Looking Back actually shows.</p>
+          <div class="used-at"><span class="tag">Reads Stage 10's output</span><span class="tag">Feeds Stage 4</span><span class="tag">Stage 11</span></div>
+        </div>
+      </div>
+
+      <div class="component">
+        <div class="head">
+          <span class="kind compute">Compute</span>
+          <h3>Generation model</h3>
+        </div>
+        <div class="body">
+          <p>Fast, cheap model — its only job is phrasing. It composes the acknowledgment plus at most one optional line, using exclusively what Retrieval or the structured memory handed it. Never generates advice or content freely; the model's job is tone, not invention.</p>
+          <div class="used-at"><span class="tag">Stage 8 — Generate</span><span class="tag">Thinking Trap re-entry</span></div>
+        </div>
+      </div>
+
+      <div class="component">
+        <div class="head">
+          <span class="kind blue" style="background:var(--blue-soft); color:var(--blue);">Reference corpus</span>
+          <h3>MITI Rubric</h3>
+        </div>
+        <div class="body">
+          <p>The Motivational Interviewing Treatment Integrity coding manual — the scoring rubric, not something retrieved into a live reply. Feeds only the sampled evaluator, which grades 5-10% of already-sent responses for tone drift over time.</p>
+          <div class="used-at"><span class="tag">Stage 12 — Sampled evaluator, async only</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    Stage numbers here match <em>docs/pipeline.html</em> exactly — if that doc's stages get renumbered, this one needs updating alongside it.
+  </footer>
+
+</div>
+</body>
+</html>

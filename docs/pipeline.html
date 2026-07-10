@@ -109,7 +109,7 @@
   .branch.muted{ opacity:0.9; }
 
   .row1{grid-row:1;} .row2{grid-row:2;} .row3{grid-row:3;} .row4{grid-row:4;} .row5{grid-row:5;}
-  .row6{grid-row:6;} .row7{grid-row:7;} .row8{grid-row:8;} .row9{grid-row:9;} .row10{grid-row:10;} .row11{grid-row:11;}
+  .row6{grid-row:6;} .row7{grid-row:7;} .row8{grid-row:8;} .row9{grid-row:9;} .row10{grid-row:10;} .row11{grid-row:11;} .row12{grid-row:12;}
 
   @media (max-width: 820px){
     .pipeline{ grid-template-columns: 1fr; }
@@ -143,6 +143,19 @@
   .finding p{ margin:0; font-size:13px; color:var(--muted); }
 
   footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--border); font-size:12.5px; color:var(--muted); }
+
+  @media print{
+    /* Printing ignores prefers-color-scheme and always resolves to light unless told
+       otherwise, so the dark palette has to be forced explicitly here. */
+    :root{
+      --bg:#17181A; --surface:#1E201C; --ink:#EDEAE2; --muted:#9B9C8F; --border:#34362F;
+      --accent:#79AC9B; --accent-soft:#22322B; --amber:#D68A4C; --amber-soft:#392A18;
+      --crisis:#DD8981; --crisis-soft:#3A211E; --violet:#B2A8D6; --violet-soft:#2A2638;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+    *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+    body, .wrap{ background:var(--bg) !important; }
+  }
 </style>
 </head>
 <body>
@@ -173,6 +186,22 @@
         <b>Care and help are not the same kind of optional</b>
         <p>Referencing something from a past check-in (<code>close_the_loop</code>) is what the product spec calls "what makes the memory feel like care rather than tracking" — it's companion behavior, not a suggestion, so it's never rate-limited. <code>offer_suggestion</code> and <code>name_thinking_trap</code> are genuine help-offers, and that's the thing that needed rationing.</p>
       </div>
+      <div class="principle">
+        <b>A fixed template only exists where the correct answer is always the same</b>
+        <p>Medical doubt, medication questions, disorder questions, and medical-document images get a special-case redirect because the right response never depends on the specifics — it's always "see a doctor," always "here's what an evaluation involves." That's a narrow list on purpose.</p>
+      </div>
+      <div class="principle">
+        <b>Don't hand-enumerate every case — classify better instead</b>
+        <p>Life decisions and dependency signals ("you're the only one who gets me") were both tempting to turn into fixed redirects, and both were wrong to. A canned string is exactly wrong at the moment someone's most emotionally exposed — it reads as clinical liability-covering, not companionship. Both stay in the normal reflective path: Classify tags the signal, a guardrail rule constrains what Generate is allowed to do with it (never reinforce dependency, never recommend a course of action), but the actual words are still generated warm and specific to what was said, not read off a template. The instinct to keep adding special-case categories should be resisted by default — a case only earns a fixed template if variance itself would be unsafe, not just because the pattern is recognizable.</p>
+      </div>
+      <div class="principle">
+        <b>Explicit memory recall gets a light answer, backed by a real summary</b>
+        <p>"Do you remember what I told you last week?", "how was my week?", and "summarize" are the same request in different words. The chat reply still stays light — "Let's look" (→ Looking Back) or "Maybe later" — but what "Let's look" opens onto has to be an actually synthesized picture, not a raw list of facts. That synthesis is the Summarizer's job (row 11): it's what makes the light answer trustworthy instead of a deflection.</p>
+      </div>
+      <div class="principle">
+        <b>Naming a thinking trap is the person's job, not the app's</b>
+        <p>The orchestrator only ever decides <em>whether</em> to quietly offer "want to look at it together?" — it never guesses which pattern. If accepted, the Thinking Trap screen hands the person a small set of plain-language options so they name it themselves; that choice is what actually drives the next reply. The app supplying its own confident guess would be the more clinical, less companion move, even phrased as a question.</p>
+      </div>
     </div>
     <div class="priority">
       <div class="step"><span class="pill care">close_the_loop</span></div>
@@ -187,7 +216,7 @@
   </section>
 
   <section>
-    <div class="section-head"><h2>Flow diagram</h2><span class="count">11 stages · 4 branches</span></div>
+    <div class="section-head"><h2>Flow diagram</h2><span class="count">12 stages · 5 branches</span></div>
     <div class="pipeline">
       <div class="spine-col">
 
@@ -214,7 +243,7 @@
           <div class="stage-card">
             <span class="tag det">Deterministic</span>
             <h3>Classify</h3>
-            <p>Special-case flag (medical / legal / disorder / dependency / medication / minor-mode) + emotion·category·intensity tag.</p>
+            <p>Special-case flag (medical / disorder / medication / minor-mode) + emotion·category·intensity tag, <strong>plus</strong> a non-blocking signal tag for life-decision and dependency content — these don't divert to a fixed template, they carry a guardrail constraint into the normal path below.</p>
           </div>
         </div>
 
@@ -223,7 +252,7 @@
           <div class="stage-card">
             <span class="tag det">Deterministic</span>
             <h3>Memory read</h3>
-            <p>Light structured summary — recurring themes, last suggestion + outcome — plus a rolling help-offer count: how many of the last N check-ins included a suggestion or thinking-trap.</p>
+            <p>Two things, not one: the raw structured facts from recent check-ins (mood tag, theme, suggestion + outcome, per check-in) <strong>and</strong> the current rolling summary the Summarizer maintains (see below) — a short synthesized narrative, not a list. Plus the rolling help-offer count for the eligibility gate.</p>
           </div>
         </div>
 
@@ -241,7 +270,7 @@
           <div class="stage-card">
             <span class="tag det">Deterministic</span>
             <h3>Retrieval</h3>
-            <p>Runs whenever there's a tag, cheap either way — prepared in case the orchestrator ends up eligible and chooses to use it. Metadata-filtered pgvector query, top 2-3 chunks.</p>
+            <p>Runs whenever there's a tag, cheap either way — prepared in case the orchestrator ends up eligible and chooses to use it. Metadata-filtered pgvector query, top 2-3 chunks. Also the re-entry point when a person selects a pattern on the Thinking Trap screen — see row 7's branch.</p>
           </div>
         </div>
 
@@ -254,7 +283,7 @@
             <div class="tools">
               <span class="tool-chip care">close_the_loop? — always considered</span>
               <span class="tool-chip">offer_suggestion? — only if eligible</span>
-              <span class="tool-chip">name_thinking_trap? — only if eligible, exactly one pattern, phrased as a guess</span>
+              <span class="tool-chip">notice_thinking_trap? — only if eligible; quiet yes/no offer only, <strong>no pattern guessed here</strong></span>
             </div>
           </div>
         </div>
@@ -264,7 +293,7 @@
           <div class="stage-card">
             <span class="tag det">Deterministic</span>
             <h3>Generate</h3>
-            <p>Acknowledgment first, written to be complete on its own. At most one quiet line appended — <code>close_the_loop</code> outranks a fresh help-offer if both would apply. Rendered as an easy-to-ignore line, never a two-button decision card. Content only from retrieved chunks, ~60-word cap.</p>
+            <p>Acknowledgment first, written to be complete on its own. At most one quiet line appended — <code>close_the_loop</code> outranks a fresh help-offer if both would apply. Rendered as an easy-to-ignore line, never a two-button decision card. Content only from retrieved chunks, ~60-word cap. When triggered by a Thinking Trap selection instead, this composes the follow-on reply from that pattern's retrieved content — a real reply, not a fixed line.</p>
           </div>
         </div>
 
@@ -273,7 +302,7 @@
           <div class="stage-card">
             <span class="tag det">Deterministic</span>
             <h3>Guardrail check</h3>
-            <p>Length, banned diagnostic/medical/legal phrasing, no-advice-giving, no more than one distortion label, no forced-choice framing on the optional line.</p>
+            <p>Length, banned diagnostic/medical/legal phrasing, no more than one distortion label, no forced-choice framing on the optional line — <strong>and (enforced here, not by a template)</strong> no recommending a course of action on relationships, jobs, or legal decisions, even when phrased as encouragement.</p>
           </div>
         </div>
 
@@ -282,12 +311,21 @@
           <div class="stage-card">
             <span class="tag det">Deterministic</span>
             <h3>Memory write → response</h3>
-            <p>Update mood/theme. Increment the rolling help-offer count only when a help-offer was shown — <code>close_the_loop</code> doesn't count against the cap.</p>
+            <p>Update mood/theme. Increment the rolling help-offer count only when a help-offer was shown — <code>close_the_loop</code> doesn't count against the cap. Appends the raw structured fact that feeds the Summarizer below.</p>
           </div>
         </div>
 
         <div class="stage row11">
           <div class="stage-marker async">11</div>
+          <div class="stage-card">
+            <span class="tag async">Async · periodic</span>
+            <h3>Summarizer</h3>
+            <p>Not per-message — runs periodically (daily rollup, or on-demand if someone asks and nothing fresh exists) over the raw structured facts Memory write has been appending. Produces the short rolling narrative that Memory read (row 4) actually uses, and that Looking Back displays. This is the piece that lets Monday's pattern actually inform Wednesday's response, instead of each check-in reasoning from isolated facts.</p>
+          </div>
+        </div>
+
+        <div class="stage row12">
+          <div class="stage-marker async">12</div>
           <div class="stage-card">
             <span class="tag async">Async · sampled</span>
             <h3>Sampled evaluator</h3>
@@ -310,12 +348,11 @@
           <p>Fixed, vetted template per category — rejoins the spine at Guardrail check, skips the orchestrator's discretion entirely.</p>
           <ul>
             <li>Medical doubt → doctor's-notes export</li>
-            <li>Life decision → reflect, don't recommend</li>
             <li>"Do I have X" → what an evaluation involves</li>
-            <li>Dependency signal → warm, plain redirect to people</li>
             <li>Medication question → hard redirect, no exceptions</li>
             <li>Medical document image → declined, redirected</li>
           </ul>
+          <p style="margin-top:8px; font-size:11.5px;"><em>Life decisions and dependency signals are deliberately not on this list — see the "don't hand-enumerate" principle above.</em></p>
         </div>
       </div>
 
@@ -333,11 +370,24 @@
         </div>
       </div>
 
+      <div class="branch-slot row7">
+        <div class="branch violet" style="margin-top:120px;">
+          <h4>Thinking Trap screen accepted</h4>
+          <p>Not a fixed template, not the app guessing — a second pass through the pipeline:</p>
+          <ul>
+            <li>Person selects a pattern on-screen (their own naming, not the app's)</li>
+            <li>Re-enters at <b>Retrieval</b> (row 6), filtered by the selected pattern instead of the general tag</li>
+            <li>Re-enters at <b>Generate</b> (row 8) — composes a real follow-on reply from that content</li>
+            <li>Same Guardrail (row 9), same Memory write (row 10)</li>
+          </ul>
+        </div>
+      </div>
+
     </div>
   </section>
 
   <section>
-    <div class="section-head"><h2>Stress-testing the pipeline</h2><span class="count">16 scenarios traced</span></div>
+    <div class="section-head"><h2>Stress-testing the pipeline</h2><span class="count">18 scenarios traced</span></div>
     <div class="table-scroll">
       <table>
         <thead><tr><th>Message / scenario</th><th>Path traced</th><th>What it confirms</th></tr></thead>
@@ -349,8 +399,13 @@
           </tr>
           <tr>
             <td class="msg">"I keep messing everything up, I'm such a failure" <span style="color:var(--muted)">(no help-offer in the last 3 check-ins)</span></td>
-            <td><span class="pathstep">Classify(negative, high intensity) → <b>Eligibility gate: yes</b> → Orchestrator: name_thinking_trap, one pattern, phrased as a guess</span></td>
+            <td><span class="pathstep">Classify(negative, high intensity) → <b>Eligibility gate: yes</b> → Orchestrator: notice_thinking_trap → quiet offer only, no pattern named yet</span></td>
             <td class="note">The gate doesn't block genuine, well-spaced help — only over-frequent help.</td>
+          </tr>
+          <tr>
+            <td class="msg">Person taps "want to look at it together?" and selects "Fortune Telling" on the Thinking Trap screen</td>
+            <td><span class="pathstep">Selection <b>re-enters at Retrieval</b> (filtered by that pattern) → <b>Generate</b> composes a real follow-on reply → Guardrail → Memory write</span></td>
+            <td class="note">Confirms this isn't a fixed template or a dead end — it's a second full pass through retrieval and generation, driven by what the person named, not what the app guessed. <span class="flag new">key case</span></td>
           </tr>
           <tr>
             <td class="msg">Same message, but a suggestion was already offered yesterday and the day before</td>
@@ -374,8 +429,8 @@
           </tr>
           <tr>
             <td class="msg">"should I break up with my partner"</td>
-            <td><span class="pathstep">Classify → <b>Special-case: life-decision</b> → fixed redirect</span></td>
-            <td class="note">Redirect reflects/asks, never recommends.</td>
+            <td><span class="pathstep">Classify(deliberation, no special-case flag) → Eligibility gate → Orchestrator: name_thinking_trap if a pattern fits (e.g. "he'll never change" → fortune telling) or close_the_loop, else plain reflection</span></td>
+            <td class="note">No fixed template — handled by the same reflective/thinking-trap path as everything else. Guardrail blocks any recommendation, regardless of which path produced the reply. <span class="flag new">reclassified</span></td>
           </tr>
           <tr>
             <td class="msg">"do I have anxiety??"</td>
@@ -384,8 +439,8 @@
           </tr>
           <tr>
             <td class="msg">"honestly you're the only one who gets me"</td>
-            <td><span class="pathstep">Classify → <b>Special-case: dependency-signal</b> → fixed redirect</span></td>
-            <td class="note">Needs a warm-but-plain vetted redirect template, not a generated one.</td>
+            <td><span class="pathstep">Classify(dependency signal, not a special-case flag) → Eligibility gate → Orchestrator generates warmly, constrained by guardrail: never reinforce, never cold-refuse</span></td>
+            <td class="note">The moment someone's most emotionally exposed is exactly the wrong moment for a canned string. <span class="flag new">reclassified</span></td>
           </tr>
           <tr>
             <td class="msg">"should I take an extra pill tonight, today's dose isn't working"</td>
@@ -399,8 +454,13 @@
           </tr>
           <tr>
             <td class="msg">"do you remember what I told you last week?" <span style="color:var(--muted)">(help-offer cap currently maxed out)</span></td>
-            <td><span class="pathstep">close_the_loop still considered — <b>not subject to the eligibility gate</b> → answers from memory normally</span></td>
-            <td class="note">Confirms the gate only rations help-offers, never the companion/memory behavior itself. <span class="flag new">key case</span></td>
+            <td><span class="pathstep">close_the_loop still considered — <b>not subject to the eligibility gate</b> → replies light: "Let's look" (→ Looking Back, backed by the Summarizer's rolling narrative) or "Maybe later," never a recap</span></td>
+            <td class="note">Confirms two things: the gate only rations help-offers, and explicit recall still can't become a data dump. <span class="flag new">key case</span></td>
+          </tr>
+          <tr>
+            <td class="msg">"how was my week?" / "summarize"</td>
+            <td><span class="pathstep">Same intent as memory recall, different phrasing → same handling: light chat reply, real answer lives in Looking Back</span></td>
+            <td class="note">Confirms Classify treats these as one intent, not three separate features to build. <span class="flag new">key case</span></td>
           </tr>
           <tr>
             <td class="msg">Mood-tap only: 😔 low <span style="color:var(--muted)">(no text)</span></td>
@@ -437,13 +497,28 @@
       </div>
       <div class="finding">
         <span class="sev block">Blocks build</span>
-        <h4>Six special-case redirect templates, not yet written</h4>
-        <p>Medical doubt, life decisions, disorder questions, dependency signals, medication questions, medical-document images. Staged in <code>knowledge-base/redirects/</code>, still empty — content-library gap, not a flow gap.</p>
+        <h4>Four special-case redirect templates, not yet written</h4>
+        <p>Medical doubt, disorder questions, medication questions, medical-document images. Staged in <code>knowledge-base/redirects/</code>, still empty — content-library gap, not a flow gap. Life decisions and dependency signals deliberately excluded — see design principles above.</p>
       </div>
       <div class="finding">
         <span class="sev block">Blocks build</span>
         <h4>Image ingest must reject medical documents before captioning</h4>
         <p>"No document-upload pathway feeds the AI" needs to be a check that runs at ingest, on every image, before anything downstream sees it.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Thinking Trap screen — how many patterns, and how are they chosen?</h4>
+        <p>Undefined: does the screen always show the same fixed set (like the current 8-item Stitch build), or a shortlist filtered by what Classify tagged? Single-select or can more than one be picked? Each answer changes what the re-entry Retrieval query looks like.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Summarizer's trigger and window aren't defined yet</h4>
+        <p>"Periodic" is doing a lot of work in that description. Nightly batch? Rolling 7-day window recomputed on every write? On-demand only, the first time someone actually asks? This also decides the cold-start case — what "let's look" says on day one, before any pattern exists to summarize.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Guardrail wording for "never reinforce dependency" / "never recommend"</h4>
+        <p>These are now enforced at the guardrail instead of a fixed template, which means the guardrail needs real rejection criteria — not just a principle. Needs example pass/fail pairs before it's testable.</p>
       </div>
       <div class="finding">
         <span class="sev decide">Decision needed</span>
