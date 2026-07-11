@@ -491,9 +491,9 @@
     <div class="section-head"><h2>Open items</h2></div>
     <div class="findings">
       <div class="finding">
-        <span class="sev block">Blocks build</span>
+        <span class="sev decide">Resolved — see backend-architecture.md</span>
         <h4>Safety gate needs conversation memory</h4>
-        <p>Scoring the latest message alone misses the "I'm fine, just thinking about it" hedge case. Needs a rolling window of recent turns, plus a per-conversation "already shown" flag so a confirmed true positive doesn't re-trigger on every later message.</p>
+        <p>Scoring the latest message alone misses the "I'm fine, just thinking about it" hedge case. Resolved by the <code>conversation_turns</code> short-term buffer and <code>user_sessions.last_crisis_card_shown_at</code> — see <em>docs/backend-architecture.md</em> §2 for the read/write logic and why it's structurally separate from the long-term summary.</p>
       </div>
       <div class="finding">
         <span class="sev block">Blocks build</span>

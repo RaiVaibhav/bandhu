@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bandhu — Backend Architecture</title>
+<style>
+  :root{
+    --bg:#F6F4EF; --surface:#FFFFFF; --ink:#21231F; --muted:#6E7268; --border:#DEDACE;
+    --accent:#3E6B5E; --accent-soft:#E4ECE8; --amber:#A8672E; --amber-soft:#F3E7D6;
+    --crisis:#9B3B34; --crisis-soft:#F5E2DF; --violet:#5C5378; --violet-soft:#EBE8F2;
+    --blue:#3B5E7A; --blue-soft:#E3EBF1;
+    --shadow: 0 1px 2px rgba(33,35,31,0.06), 0 1px 1px rgba(33,35,31,0.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17181A; --surface:#1E201C; --ink:#EDEAE2; --muted:#9B9C8F; --border:#34362F;
+      --accent:#79AC9B; --accent-soft:#22322B; --amber:#D68A4C; --amber-soft:#392A18;
+      --crisis:#DD8981; --crisis-soft:#3A211E; --violet:#B2A8D6; --violet-soft:#2A2638;
+      --blue:#8FB4D1; --blue-soft:#1F2C36;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17181A; --surface:#1E201C; --ink:#EDEAE2; --muted:#9B9C8F; --border:#34362F;
+    --accent:#79AC9B; --accent-soft:#22322B; --amber:#D68A4C; --amber-soft:#392A18;
+    --crisis:#DD8981; --crisis-soft:#3A211E; --violet:#B2A8D6; --violet-soft:#2A2638;
+    --blue:#8FB4D1; --blue-soft:#1F2C36;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  :root[data-theme="light"]{
+    --bg:#F6F4EF; --surface:#FFFFFF; --ink:#21231F; --muted:#6E7268; --border:#DEDACE;
+    --accent:#3E6B5E; --accent-soft:#E4ECE8; --amber:#A8672E; --amber-soft:#F3E7D6;
+    --crisis:#9B3B34; --crisis-soft:#F5E2DF; --violet:#5C5378; --violet-soft:#EBE8F2;
+    --blue:#3B5E7A; --blue-soft:#E3EBF1;
+    --shadow: 0 1px 2px rgba(33,35,31,0.06);
+  }
+
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; line-height:1.5; }
+  .wrap{ max-width:1180px; margin:0 auto; padding: 48px 28px 96px; }
+  h1,h2,h3{ font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-weight:600; text-wrap:balance; color:var(--ink); margin:0; }
+  code{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  header.top{ margin-bottom:32px; border-bottom:1px solid var(--border); padding-bottom:28px; }
+  header.top .eyebrow{ font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:10px; }
+  header.top h1{ font-size:32px; margin-bottom:10px; }
+  header.top p{ color:var(--muted); font-size:15px; max-width:76ch; margin:0 0 6px; }
+  header.top .terms{ font-size:12.5px; color:var(--muted); margin-top:14px; max-width:78ch; border-top:1px solid var(--border); padding-top:14px; }
+  header.top .terms b{ color:var(--ink); }
+
+  .legend{ display:flex; flex-wrap:wrap; gap:10px 18px; margin-top:22px; }
+  .legend-item{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
+  .swatch{ width:12px; height:12px; border-radius:3px; flex:none; }
+
+  section{ margin-top:52px; }
+  section > .section-head{ margin-bottom:20px; }
+  section > .section-head h2{ font-size:22px; }
+  section > .section-head p{ color:var(--muted); font-size:13.5px; margin:6px 0 0; max-width:76ch; }
+
+  /* ---------- tables ---------- */
+  .table-scroll{ overflow-x:auto; border:1px solid var(--border); border-radius:10px; }
+  table{ border-collapse:collapse; width:100%; min-width:640px; font-size:13.5px; }
+  thead th{ text-align:left; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:12px 14px; background:var(--accent-soft); border-bottom:1px solid var(--border); white-space:nowrap; }
+  tbody td{ padding:12px 14px; border-bottom:1px solid var(--border); vertical-align:top; }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr:hover{ background:var(--accent-soft); }
+  td.k{ font-weight:700; white-space:nowrap; }
+  .badge-tbd{ display:inline-block; font-size:10px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; padding:2px 7px; border-radius:20px; background:var(--blue-soft); color:var(--blue); margin-left:6px; }
+
+  /* ---------- memory comparison ---------- */
+  .memcols{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .memcol{ border-radius:12px; padding:18px 20px; border:1.5px solid; }
+  .memcol.buf{ border-color:var(--accent); background:var(--accent-soft); }
+  .memcol.sum{ border-color:var(--violet); background:var(--violet-soft); }
+  .memcol .label{ font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:8px; }
+  .memcol.buf .label{ color:var(--accent); }
+  .memcol.sum .label{ color:var(--violet); }
+  .memcol h3{ font-size:16px; margin-bottom:10px; }
+  .memcol dl{ margin:0; font-size:12.5px; }
+  .memcol dt{ font-weight:700; color:var(--ink); margin-top:9px; }
+  .memcol dt:first-child{ margin-top:0; }
+  .memcol dd{ margin:2px 0 0; color:var(--ink); opacity:0.85; line-height:1.5; }
+  @media (max-width:760px){ .memcols{ grid-template-columns:1fr; } }
+
+  /* ---------- lifecycle spine (condensed) ---------- */
+  .pipeline{ display:grid; grid-template-columns: minmax(0,420px) minmax(0,1fr); column-gap: 28px; }
+  .spine-col{ position:relative; padding-left:30px; }
+  .spine-col::before{ content:""; position:absolute; left:9px; top:14px; bottom:14px; width:2px; background:var(--border); }
+  .stage{ position:relative; padding-bottom:20px; }
+  .stage:last-child{ padding-bottom:0; }
+  .stage-marker{ position:absolute; left:-30px; top:4px; width:20px; height:20px; border-radius:50%; background:var(--surface); border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:var(--muted); }
+  .stage-marker.gate{ border-color:var(--amber); color:var(--amber); background:var(--amber-soft); }
+  .stage-marker.async{ border-style:dashed; }
+  .stage-marker.io{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .stage-marker.voice{ border-color:var(--blue); color:var(--blue); background:var(--blue-soft); }
+  .stage-card{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 16px; box-shadow:var(--shadow); }
+  .stage-card.gate{ border-color:var(--amber); background:var(--amber-soft); }
+  .stage-card.voice{ border-color:var(--blue); background:var(--blue-soft); }
+  .stage-card h3{ font-size:14px; font-family:inherit; font-weight:700; margin-bottom:4px; }
+  .stage-card p{ font-size:12.5px; color:var(--muted); margin:0; }
+  .stage-card .tools{ display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .chip{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; border:1px solid; }
+  .chip.pg{ border-color:var(--violet); color:var(--violet); background:var(--violet-soft); }
+  .chip.wv{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .chip.claude{ border-color:var(--amber); color:var(--amber); background:var(--amber-soft); }
+  .chip.proc{ border-color:var(--border); color:var(--ink); background:var(--bg); }
+  .chip.voice{ border-color:var(--blue); color:var(--blue); background:var(--blue-soft); }
+  @media (max-width: 820px){ .pipeline{ grid-template-columns: 1fr; } }
+
+  /* ---------- stage detail cards (component logic) ---------- */
+  .stage-detail{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 20px; box-shadow:var(--shadow); margin-bottom:12px; }
+  .stage-detail:last-child{ margin-bottom:0; }
+  .sd-head{ display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .sd-num{ width:26px; height:26px; border-radius:50%; background:var(--accent-soft); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex:none; font-variant-numeric:tabular-nums; }
+  .stage-detail.async .sd-num{ border:1.5px dashed var(--muted); background:transparent; color:var(--muted); }
+  .stage-detail.gate .sd-num{ background:var(--amber-soft); color:var(--amber); }
+  .sd-head h3{ font-size:15px; }
+  .sd-short{ font-size:11.5px; color:var(--muted); font-style:italic; }
+  .sd-row{ display:grid; grid-template-columns:76px 1fr; gap:10px; padding:5px 0; }
+  .sd-row .sd-label{ font-weight:700; color:var(--muted); font-size:10.5px; letter-spacing:0.05em; text-transform:uppercase; padding-top:2px; }
+  .sd-row .sd-val{ color:var(--ink); font-size:13px; line-height:1.55; }
+  .sd-row .sd-val code{ background:var(--bg); padding:1px 5px; border-radius:4px; font-size:12px; border:1px solid var(--border); }
+  .sd-plain{ background:var(--accent-soft); border-radius:6px; padding:9px 12px; margin-bottom:10px; font-size:13px; color:var(--ink); line-height:1.55; }
+  .sd-plain b{ color:var(--accent); font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; display:block; margin-bottom:3px; }
+
+  /* ---------- voice flow diagram ---------- */
+  .flow{ display:flex; flex-direction:column; gap:2px; max-width:640px; }
+  .flow-step{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:13px; box-shadow:var(--shadow); position:relative; }
+  .flow-step.warn{ border-color:var(--crisis); background:var(--crisis-soft); }
+  .flow-step.reject{ border-color:var(--amber); background:var(--amber-soft); font-size:12px; }
+  .flow-arrow{ text-align:center; color:var(--muted); font-size:14px; padding:2px 0; }
+  .flow-branch{ margin-left:24px; border-left:2px dashed var(--border); padding-left:16px; margin-top:2px; margin-bottom:2px; }
+
+  /* ---------- code ---------- */
+  .code-block{ margin-top:14px; }
+  .code-label{ font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  pre.code{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 18px; overflow-x:auto; box-shadow:var(--shadow); margin:0; }
+  pre.code code{ font-size:12.5px; line-height:1.65; color:var(--ink); white-space:pre; }
+
+  /* ---------- cards / principles ---------- */
+  .cards{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:16px; }
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; box-shadow:var(--shadow); }
+  .card .label{ font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--accent); margin-bottom:8px; }
+  .card h3{ font-size:15px; margin-bottom:6px; }
+  .card p{ margin:0; font-size:13px; color:var(--muted); line-height:1.55; }
+
+  .principles{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:16px; }
+  .principle{ background:var(--violet-soft); border:1px solid var(--violet); border-radius:12px; padding:16px 20px; }
+  .principle b{ display:block; font-size:13.5px; color:var(--violet); margin-bottom:6px; }
+  .principle p{ margin:0; font-size:13px; color:var(--ink); line-height:1.55; }
+  .principle.accent{ background:var(--accent-soft); border-color:var(--accent); }
+  .principle.accent b{ color:var(--accent); }
+  .principle.crisis{ background:var(--crisis-soft); border-color:var(--crisis); }
+  .principle.crisis b{ color:var(--crisis); }
+  .principle.blue{ background:var(--blue-soft); border-color:var(--blue); }
+  .principle.blue b{ color:var(--blue); }
+
+  /* ---------- findings / open items ---------- */
+  .findings{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:16px; }
+  .finding{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 18px; box-shadow:var(--shadow); }
+  .finding .sev{ display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; padding:2px 8px; border-radius:20px; margin-bottom:10px; }
+  .sev.decide{ background:var(--amber-soft); color:var(--amber); }
+  .sev.verify{ background:var(--blue-soft); color:var(--blue); }
+  .sev.done{ background:var(--accent-soft); color:var(--accent); }
+  .finding h4{ font-size:14px; margin:0 0 6px; font-family:inherit; font-weight:700; }
+  .finding p{ margin:0; font-size:13px; color:var(--muted); }
+
+  footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--border); font-size:12.5px; color:var(--muted); }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow">Bandhu — Engineering Reference</div>
+    <h1>Backend architecture</h1>
+    <p>Companion to <em>docs/pipeline.html</em> (the 12-stage flow) and <em>docs/vector-database.md</em> (Supabase/Postgres + pgvector schema). This is the layer those don't cover: how memory works for a multi-turn chat, how voice fits in, what process runs the pipeline, how an anonymous browser becomes an identity, what stops abuse, and how you'd see what happened after the fact.</p>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:var(--violet)"></span>Supabase (Postgres + pgvector)</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--amber)"></span>Claude</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--blue)"></span>STT / TTS</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--border)"></span>In-process logic</div>
+      <div class="legend-item"><span class="swatch" style="border:1px dashed var(--muted); background:transparent"></span>Async / background</div>
+    </div>
+    <div class="terms"><b>Terms:</b> a <b>message</b> is one thing the person sends — text or voice. A <b>turn</b> is one message + Bandhu's one reply — the atomic unit every stage processes. A <b>sitting</b> isn't stored anywhere — it's just turns close together in time (§2 explains how that's detected without tracking session boundaries).</div>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <h2>1. Stack</h2>
+      <p>Python throughout — every other piece here has a first-class Python client, and this pipeline is almost entirely I/O-bound, which is what makes an async framework worth it.</p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Web framework</td><td>FastAPI</td><td>Async-native — one process handles many concurrent turns. Pydantic validation catches shape bugs before a stage sees them.</td></tr>
+          <tr><td class="k">Database</td><td>Supabase (PostgreSQL + <code>pgvector</code>)</td><td>One database, content and user data both. Free tier, no separate vector-database service. Also holds the conversation buffer (§2). See <em>vector-database.md</em> §1.</td></tr>
+          <tr><td class="k">ORM / migrations</td><td>SQLAlchemy + Alembic</td><td>Table defs as Python classes; schema changes become reviewable migrations.</td></tr>
+          <tr><td class="k">Embeddings</td><td>Voyage AI</td><td>Anthropic has no embeddings API.</td></tr>
+          <tr><td class="k">Generation</td><td>Claude (official <code>anthropic</code> SDK)</td><td>Per the model-tier table in <em>vector-database.md</em> §1.</td></tr>
+          <tr><td class="k">Speech-to-text</td><td>Not locked <span class="badge-tbd">TBD</span></td><td>Needs strong Hindi/Hinglish accuracy. Candidates: OpenAI Whisper, Sarvam AI / Bhashini (India-first). See §5.</td></tr>
+          <tr><td class="k">Text-to-speech</td><td>Not locked <span class="badge-tbd">TBD</span></td><td>Same language bar, plus voice warmth matters for a companion. Candidates: ElevenLabs, Sarvam AI. See §5.</td></tr>
+          <tr><td class="k">Rate limiting</td><td><code>slowapi</code></td><td>In-memory backend is enough for one instance — see §8.</td></tr>
+          <tr><td class="k">Scheduled jobs</td><td>APScheduler, in-process</td><td>Runs cleanup + Summarizer with no extra service. See §9.</td></tr>
+          <tr><td class="k">Telemetry</td><td>Arize Phoenix + OpenTelemetry</td><td>See §10.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>2. Memory — two horizons</h2>
+      <p>Core to a chatbot flow specifically, not incidental plumbing. Two structurally separate things share the word "memory" — conflating them was the actual gap in an earlier version of this doc.</p>
+    </div>
+
+    <div class="memcols">
+      <div class="memcol buf">
+        <div class="label">Same sitting</div>
+        <h3>Conversation buffer</h3>
+        <dl>
+          <dt>Table</dt><dd><code>conversation_turns</code></dd>
+          <dt>Horizon</dt><dd>Last ~12 turns, only if within the last 2 hours</dd>
+          <dt>Content</dt><dd>Raw text, verbatim (transcribed, if voice — §5)</dd>
+          <dt>Written</dt><dd>Every turn (stage 10)</dd>
+          <dt>Read by</dt><dd>Safety gate (2), Orchestrator (7), Generate (8)</dd>
+          <dt>Feeds Claude as</dt><dd>The <code>messages</code> array</dd>
+          <dt>Never does</dt><dd>Get summarized, or shown to the person as a recap</dd>
+        </dl>
+      </div>
+      <div class="memcol sum">
+        <div class="label">Across visits</div>
+        <h3>Rolling summary</h3>
+        <dl>
+          <dt>Table</dt><dd><code>user_memory_summary</code></dd>
+          <dt>Horizon</dt><dd>Cross-day / cross-week, synthesized narrative</dd>
+          <dt>Content</dt><dd>Synthesized facts, never a direct quote</dd>
+          <dt>Written</dt><dd>Periodically, async (stage 11)</dd>
+          <dt>Read by</dt><dd>Orchestrator (7), via Memory read (4)</dd>
+          <dt>Feeds Claude as</dt><dd>A block inside the <code>system</code> prompt</dd>
+          <dt>Never does</dt><dd>Contain a verbatim quote presented as if just said</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">Read query — Memory read, stage 4</div>
+      <pre class="code"><code>SELECT role, content FROM conversation_turns
+WHERE session_id = $1
+  AND created_at &gt; now() - interval '2 hours'
+ORDER BY created_at ASC
+LIMIT 12;</code></pre>
+    </div>
+
+    <div class="principles" style="margin-top:16px;">
+      <div class="principle accent">
+        <b>Why two, not one</b>
+        <p>Only the long-term summary → conversation feels amnesiac mid-chat, since it updates periodically, not every turn. Only a raw buffer with no synthesis → it either grows into a literal transcript (what "never a data recap" rules out) or gets truncated and any earlier pattern is just gone.</p>
+      </div>
+      <div class="principle">
+        <b>The 2-hour filter replaces session-boundary tracking</b>
+        <p>No need to explicitly track when a "sitting" starts or ends — just "is the last thing said recent enough to still be live." Return tomorrow and this reads empty; the already-synthesized summary carries continuity across that gap instead.</p>
+      </div>
+    </div>
+
+    <div class="principle" style="margin-top:16px; max-width:none; background:var(--surface); border-color:var(--border);">
+      <b style="color:var(--ink);">Resolves an existing open item</b>
+      <p><em>pipeline.html</em> flagged "Safety gate needs conversation memory" as a build-blocker — the hedge case ("just thinking about it" after an earlier direct statement) can't be caught from one message alone. The Safety gate now reads this same buffer, and the "already shown" flag that finding also called for is <code>user_sessions.last_crisis_card_shown_at</code> — suppresses re-rendering the crisis card, never suppresses the underlying match itself.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>3. Request lifecycle</h2>
+      <p>Steps before the pipeline are synchronous — the person is waiting. Full stage-by-stage detail is §4; voice-specific detail is §5.</p>
+    </div>
+    <div class="pipeline">
+      <div class="spine-col">
+        <div class="stage">
+          <div class="stage-marker gate">1</div>
+          <div class="stage-card gate">
+            <h3>Session + rate-limit middleware</h3>
+            <p>Issue/validate <code>bandhu_sid</code>. Over quota → 429, stop here.</p>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="stage-marker voice">2</div>
+          <div class="stage-card voice">
+            <h3>STT, if the message is audio</h3>
+            <p>Transcribe → text + language, then discard the audio. Text messages skip straight past this. See §5.</p>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="stage-marker io">3</div>
+          <div class="stage-card">
+            <h3>Pipeline orchestrator — 12 stages</h3>
+            <p>Memory read pulls <em>both</em> horizons from §2 before Orchestrator/Generate run. Full breakdown in §4.</p>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="stage-marker voice">4</div>
+          <div class="stage-card voice">
+            <h3>TTS, if the turn was voice</h3>
+            <p>After Guardrail passes — synthesize <code>response_text</code>. Text turns skip this. See §5.</p>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="stage-marker">5</div>
+          <div class="stage-card">
+            <h3>Response</h3>
+            <p>200 + body (text, +audio if voice). <code>Set-Cookie</code> only if a new session was issued.</p>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="stage-marker async">6</div>
+          <div class="stage-card">
+            <h3>Async tail</h3>
+            <p>Summarizer (periodic) + Sampled evaluator — run after the reply is already delivered.</p>
+          </div>
+        </div>
+      </div>
+      <div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>4. Component logic — one by one</h2>
+      <p>Each stage: the plain-language version first, then what it actually receives, does, and hands forward.</p>
+    </div>
+
+    <div class="stage-detail gate">
+      <div class="sd-head"><span class="sd-num">1</span><h3>Ingest &amp; normalize</h3><span class="sd-short">now 3 media types</span></div>
+      <div class="sd-plain"><b>In plain terms</b>The message comes in — typed, spoken, or a photo. Spoken gets turned into text immediately, and the recording itself is thrown away. A photo gets a quick check for whether it's a medical document before anything else touches it. Typed text just gets a language check.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Raw message — text, image, <b>or audio</b> — + <code>session_id</code></div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Audio → STT first (§5), then treated identically to typed text from here on. Image → classify photo-vs-medical-document <b>before anything else touches it.</b> Text → language detection (incl. code-mixed Hindi/English).</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>Message{text, language, media_type, input_mode}</code></div></div>
+    </div>
+
+    <div class="stage-detail gate">
+      <div class="sd-head"><span class="sd-num">2</span><h3>Safety gate</h3></div>
+      <div class="sd-plain"><b>In plain terms</b>Before anything else, check the message and the last few things said for any sign the person might be in real danger. If something's there, everything below stops and the crisis response takes over instead — this is the very first thing that runs, not a maybe-later step.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Normalized message + conversation buffer (§2) + <code>last_crisis_card_shown_at</code></div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Pattern-match message <b>and</b> buffer against <code>safety_patterns</code> — a hedge only counts if a direct statement appears earlier in the buffer. Suppress re-rendering the crisis card if shown recently; match still always runs.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>{triggered, severity}</code> — triggered short-circuits straight to the Crisis branch.</div></div>
+    </div>
+
+    <div class="stage-detail">
+      <div class="sd-head"><span class="sd-num">3</span><h3>Classify</h3><span class="sd-short">not the buffer — this message only</span></div>
+      <div class="sd-plain"><b>In plain terms</b>A quick read on the emotional tone of just this message — sad, anxious, stressed. Also catches a few danger zones ("do I have depression," "what medication should I take") and routes those to a pre-written, careful redirect instead of letting anything improvise an answer.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Normalized message only</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude fast-tier call → emotion/category/intensity tags, or a special-case flag (medical doubt, disorder, medication question).</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>tags{}</code> or <code>special_case</code> — special case short-circuits to the fixed redirect branch.</div></div>
+    </div>
+
+    <div class="stage-detail">
+      <div class="sd-head"><span class="sd-num">4</span><h3>Memory read</h3></div>
+      <div class="sd-plain"><b>In plain terms</b>Pull up who we're talking to — the last few things said in this sitting (so the reply doesn't sound like it forgot), and a softened, longer-term impression of how this person's been doing lately.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val"><code>session_id</code></div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Two reads: <code>user_memory_summary</code> (long-term) and <code>conversation_turns</code> (short-term, §2).</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>{summary_text, recent_turns[]}</code></div></div>
+    </div>
+
+    <div class="stage-detail">
+      <div class="sd-head"><span class="sd-num">5</span><h3>Eligibility gate</h3></div>
+      <div class="sd-plain"><b>In plain terms</b>Check whether a suggestion has already been offered too many times recently, so Bandhu doesn't feel like it's constantly pitching things. Just following up on something already offered doesn't count as a new offer.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val"><code>session_id</code></div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Count <code>is_help_offer=true</code> over last 3 <code>user_checkins</code> rows — structured events, not raw messages. <code>close_the_loop</code> never counts against this.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>eligible_for_offer: bool</code></div></div>
+    </div>
+
+    <div class="stage-detail">
+      <div class="sd-head"><span class="sd-num">6</span><h3>Retrieval</h3><span class="sd-short">deliberately not the buffer</span></div>
+      <div class="sd-plain"><b>In plain terms</b>Based on the emotional tag from step 3, pull a couple of short, pre-approved pieces of content — a grounding technique, a way of reframing a thought — from a small, human-reviewed library. Nothing invented, only retrieved.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Classify's <code>tags</code> + language</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val"><code>pgvector</code> query — metadata filter then similarity, top 2-3 (<em>vector-database.md</em> §3). Keeps search anchored to what was just said, not drifting with dialogue.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>retrieved_chunks[]</code></div></div>
+    </div>
+
+    <div class="stage-detail" style="border-color:var(--accent); background:var(--accent-soft);">
+      <div class="sd-head"><span class="sd-num">7</span><h3>Orchestrator (judgment)</h3></div>
+      <div class="sd-plain" style="background:var(--surface);"><b>In plain terms</b>The one real decision in the whole flow. Everything gathered so far goes here, and it decides: acknowledge and stop, gently offer something, point out a thinking pattern, or just stay quiet. Quiet is the default — something has to earn its way into the reply.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Message, tags, <code>{summary_text, recent_turns[]}</code>, <code>eligible_for_offer</code>, <code>retrieved_chunks[]</code></div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude Opus-tier — the one real-discretion call. Decides close_the_loop / offer_suggestion / notice_thinking_trap / silence (default). Needs <code>recent_turns</code> specifically to avoid repeating an offer made two messages ago.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>directive{tool, target_or_none}</code></div></div>
+    </div>
+
+    <div class="stage-detail">
+      <div class="sd-head"><span class="sd-num">8</span><h3>Generate</h3><span class="sd-short">see §6 — always outputs text</span></div>
+      <div class="sd-plain"><b>In plain terms</b>Write the actual reply. Doesn't decide anything new — just phrases whatever stage 7 decided into a short, warm sentence or two, using only what it was handed.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val"><code>directive</code> + its target content + <code>recent_turns</code> + current message</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude fast-tier, phrasing only, ~60-word cap, constrained to what's handed to it. Doesn't think about output modality — voice synthesis happens later, in stage 10.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>response_text</code></div></div>
+    </div>
+
+    <div class="stage-detail">
+      <div class="sd-head"><span class="sd-num">9</span><h3>Guardrail check</h3></div>
+      <div class="sd-plain"><b>In plain terms</b>Double-check the drafted reply before it goes out — did it accidentally sound like a diagnosis, a recommendation, anything it shouldn't. If it slips, swap it for a safe fallback instead of sending it as-is.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val"><code>response_text</code> + hard-constraint list</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Rule engine / secondary check for violations.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val">Pass → send. Fail → fallback safe response.</div></div>
+    </div>
+
+    <div class="stage-detail gate">
+      <div class="sd-head"><span class="sd-num">10</span><h3>Memory write → response</h3><span class="sd-short">TTS happens here</span></div>
+      <div class="sd-plain"><b>In plain terms</b>Save what happened this turn, then send the reply. If the person spoke to Bandhu, this is also where the reply gets turned into audio before it goes back.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Everything produced this turn</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Insert <code>user_checkins</code> row (facts + <code>input_mode</code>); insert 2 <code>conversation_turns</code> rows (message + reply, text only). If voice → TTS on <code>response_text</code> now (§5).</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val">Response sent — text always, +audio if the turn was voice</div></div>
+    </div>
+
+    <div class="stage-detail async">
+      <div class="sd-head"><span class="sd-num">11</span><h3>Summarizer</h3><span class="sd-short">async · periodic</span></div>
+      <div class="sd-plain"><b>In plain terms</b>Every so often, not every turn, take stock — look back at recent facts and rewrite the longer-term summary in a few sentences, so a later conversation still feels like it remembers an earlier one, without ever storing or repeating exact quotes.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Accumulated <code>user_checkins</code> facts since last run</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude mid-tier, synthesizes a few-sentence narrative. <b>Does not</b> read <code>conversation_turns</code> — summarizes facts, not raw dialogue.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val">Updates <code>user_memory_summary</code></div></div>
+    </div>
+
+    <div class="stage-detail async">
+      <div class="sd-head"><span class="sd-num">12</span><h3>Sampled evaluator</h3><span class="sd-short">async · 5–10% of turns</span></div>
+      <div class="sd-plain"><b>In plain terms</b>Spot-check quality — on a small slice of replies, separate from the live conversation, grade the reply against a coaching-conversation rubric, purely so tone can be checked over time. Never affects what the person actually sees.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">A sampled turn's <code>response_text</code> + its context</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude Opus-tier, scores against the MITI rubric.</div></div>
+      <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>evaluator_scores</code> row</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>5. Voice input &amp; output</h2>
+      <p>Two edge adapters, not two new pipeline stages — everything between STT and TTS is the same 12-stage flow regardless of how the message arrived. <em>pipeline.html</em>'s conversation logic shouldn't need to know or care whether someone typed or spoke.</p>
+    </div>
+
+    <div class="section-head" style="margin-bottom:12px;"><h3 style="font-size:15px;">Voice in — before stage 1</h3></div>
+    <div class="flow">
+      <div class="flow-step">Browser records audio (MediaRecorder) → <code>POST /message</code>, audio blob</div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step">Duration / size check</div>
+      <div class="flow-branch"><div class="flow-step reject">Over cap → reject now, before paying for STT at all</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step">STT call (provider TBD, §1) → <code>{text, detected_language}</code></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step warn"><b>Discard the audio blob</b> — never written to disk or object storage</div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step">Continues as a normal <code>Message{text, language, input_mode:'voice'}</code> into stage 1</div>
+    </div>
+
+    <div class="principle crisis" style="margin-top:20px; max-width:none;">
+      <b>The privacy point, stated plainly</b>
+      <p>A voice recording is a strictly more sensitive artifact than its text transcript — it carries tone, identity, and emotional state in a way text doesn't, especially for someone using this app in distress. The "never a data recap / never a permanent transcript" principle that already governs <code>conversation_turns</code> (§2) applies at least as strongly here, arguably more. The commitment: audio is transcribed and <b>immediately discarded, never persisted</b> — not to a bucket, not to a temp table, not even transiently beyond what the STT call itself needs. Only the transcribed text ever reaches <code>conversation_turns</code> or <code>user_checkins</code>.</p>
+    </div>
+
+    <div class="section-head" style="margin-top:32px; margin-bottom:12px;"><h3 style="font-size:15px;">Voice out — after stage 9, inside stage 10</h3></div>
+    <div class="flow">
+      <div class="flow-step">Guardrail check passes → <code>response_text</code> finalized</div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step"><code>input_mode == 'voice'</code>?</div>
+      <div class="flow-branch"><div class="flow-step reject">No → respond with text only</div></div>
+      <div class="flow-arrow">↓ yes</div>
+      <div class="flow-step">TTS call (provider TBD, §1) → audio stream/URL</div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step">Respond with <code>{text, audio}</code> — text always included, even on a voice turn</div>
+    </div>
+
+    <div class="principles" style="margin-top:20px;">
+      <div class="principle blue">
+        <b>Why text is always stored, regardless of modality</b>
+        <p><code>response_text</code> is what gets written to <code>conversation_turns</code> (§2, §4 stage 10) and what gets spoken — TTS runs on it, doesn't replace it. That keeps the buffer's content uniform regardless of input/output modality, so Orchestrator/Generate never need to branch on how a past turn was delivered.</p>
+      </div>
+      <div class="principle">
+        <b>Latency — named, not solved here</b>
+        <p>A voice turn now pays STT time, the same two Claude calls a text turn pays, then TTS time — a longer, more latency-sensitive round-trip than typing. Two real options, neither committed to: accept the added latency for v1, or stream TTS as text is generated (meaningfully more complex). See open items.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>6. The Generate call, concretely</h2>
+      <p>Where the two memory horizons actually meet the Claude API — unaffected by voice (§5): by the time Generate runs, the turn is already plain text either way.</p>
+    </div>
+    <div class="code-block">
+      <pre class="code"><code># recent_turns is stage 4's output, oldest first
+messages = [{"role": t.role, "content": t.content} for t in recent_turns]
+messages.append({"role": "user", "content": current_message.text})
+
+system_prompt = f"""{BANDHU_PERSONA_AND_CONSTRAINTS}
+
+Rolling context on this person — for your own awareness only, never to be
+recited back to them:
+{summary_text or "No prior context yet."}
+
+{directive.as_prompt_block()}
+# e.g. "Offer this, once, warmly, only if it fits naturally: &lt;retrieved_chunk.text&gt;"
+"""
+
+response = client.messages.create(
+    model=GENERATE_MODEL,      # fast tier — vector-database.md §1
+    max_tokens=150,
+    system=system_prompt,
+    messages=messages,
+)</code></pre>
+    </div>
+    <div class="principle accent" style="margin-top:16px; max-width:none;">
+      <b>Why the split matters, not just how it's coded</b>
+      <p>The long-term summary and the Orchestrator's directive go into <code>system</code> — Claude knows them, but they can never literally appear as a chat bubble, since they're not in <code>messages</code>. Only the real back-and-forth goes into <code>messages</code>. This makes "never a data recap" structurally true, not a prompt instruction Claude could drift from — the summary physically cannot come out sounding like "Last Tuesday you said X," because it was never written into the transcript as if anyone said it.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>7. Anonymous identity — the <code>bandhu_sid</code> cookie</h2>
+      <p>No login, no account — consistent with the product's companion-first stance. But the pipeline still needs something stable to hang turns and memory off of.</p>
+    </div>
+    <div class="code-block">
+      <div class="code-label">Cookie flags</div>
+      <pre class="code"><code>response.set_cookie(
+    key="bandhu_sid",
+    value=str(session_id),
+    max_age=60 * 60 * 24 * 14,   # 14 days — matches the cleanup job's window exactly
+    httponly=True,                 # JS on the page can't read or tamper with it
+    secure=True,                   # only sent over HTTPS
+    samesite="lax",                # normal navigation still sends it; blocks most
+                                    # cross-site abuse without breaking anything
+)</code></pre>
+    </div>
+    <div class="principles" style="margin-top:16px;">
+      <div class="principle">
+        <b>Why httponly matters specifically here</b>
+        <p><code>session_id</code> is the key to someone's conversation and memory. If JS could read it, any XSS bug becomes a way to read that history, not just deface a page.</p>
+      </div>
+      <div class="principle">
+        <b>Why the server issues it, not the client</b>
+        <p>A client-generated id is fully attacker-controlled with no way to detect forgery or replay. A server-issued, server-validated cookie is the safer default for anything scoping private data — even anonymous data.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>8. Rate limiting — layered</h2>
+      <p>The only identity to limit against is <code>session_id</code> (once issued) and IP (always available). Each layer catches a different abuse shape — voice adds a third.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="label">Layer 1</div>
+        <h3>Per-session — 20 / 10 min</h3>
+        <p>Stops one runaway client from burning spend. A voice turn now costs STT + 2 Claude calls + TTS, not just 2 Claude calls.</p>
+      </div>
+      <div class="card">
+        <div class="label">Layer 2</div>
+        <h3>Per-IP, looser — 200 / 10 min</h3>
+        <p>Backstop against discarding cookies for a fresh session every request.</p>
+      </div>
+      <div class="card">
+        <div class="label">Layer 3 — voice only</div>
+        <h3>Duration cap, §5</h3>
+        <p>Checked before STT runs at all — rejecting an oversized clip is free; rejecting one that already hit STT costs a paid call.</p>
+      </div>
+    </div>
+    <div class="code-block">
+      <div class="code-label">slowapi</div>
+      <pre class="code"><code>from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+def rate_limit_key(request):
+    return request.cookies.get("bandhu_sid") or get_remote_address(request)
+
+limiter = Limiter(key_func=rate_limit_key)
+
+@app.post("/message")
+@limiter.limit("20/10minutes")
+async def message(...): ...</code></pre>
+    </div>
+    <p style="font-size:12.5px; color:var(--muted); margin-top:12px;">All numbers are starting points — tune from real traffic. <code>slowapi</code>'s default backend counts in the process's own memory: correct for one process, but with multiple workers the effective limit becomes <code>configured × process count</code> — fix is pointing it at Redis, a config change not a redesign.</p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>9. Cleanup job — the 2-week expiry</h2>
+      <p>One scheduled job, daily. The entire job is one query, because <code>ON DELETE CASCADE</code> does the rest.</p>
+    </div>
+    <div class="code-block">
+      <div class="code-label">APScheduler, daily 3am</div>
+      <pre class="code"><code>def cleanup_expired_sessions(db):
+    db.execute(
+        "DELETE FROM user_sessions WHERE last_active_at &lt; now() - interval '14 days'"
+    )
+    db.commit()</code></pre>
+    </div>
+    <p style="font-size:12.5px; color:var(--muted); margin-top:12px;"><code>ON DELETE CASCADE</code> on <code>user_checkins</code>, <code>conversation_turns</code>, <code>user_memory_summary</code>, and transitively <code>evaluator_scores</code> means one <code>DELETE</code> cleans up every table that references <code>user_sessions</code>. <b style="color:var(--ink);">There's no audio table to clean up</b> — per §5, raw voice is never written anywhere, so there's nothing here for this job to even reach.</p>
+    <div class="principles" style="margin-top:16px;">
+      <div class="principle">
+        <b>The window resets on activity</b>
+        <p><code>last_active_at</code> updates every turn, so "2 weeks" means since the person's <em>last</em> visit. Confirm this is what you meant — the one-line alternative is keying off <code>created_at</code> instead.</p>
+      </div>
+      <div class="principle">
+        <b>Cookie max-age and the job's window must move together</b>
+        <p>Two independent settings encoding one policy. Not dangerous if they drift, but worth a code comment linking them so a future edit doesn't silently desync the two.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>10. Telemetry — Phoenix</h2>
+      <p>An LLM pipeline fails silently far more than it crashes — Phoenix is how you see that happening instead of hearing about it from a screenshot later.</p>
+    </div>
+    <div class="code-block">
+      <div class="code-label">Setup — auto-instruments every Claude call</div>
+      <pre class="code"><code>from phoenix.otel import register
+from openinference.instrumentation.anthropic import AnthropicInstrumentor
+
+tracer_provider = register(project_name="bandhu", endpoint="http://localhost:6006/v1/traces")
+AnthropicInstrumentor().instrument(tracer_provider=tracer_provider)</code></pre>
+    </div>
+    <div class="code-block">
+      <div class="code-label">Postgres / STT / TTS all need a manual span</div>
+      <pre class="code"><code>from opentelemetry import trace
+tracer = trace.get_tracer("bandhu.pipeline")
+
+def transcribe(audio_bytes):
+    with tracer.start_as_current_span("stt") as span:
+        result = stt_client.transcribe(audio_bytes)
+        span.set_attribute("stt.detected_language", result.language)
+        span.set_attribute("stt.duration_seconds", result.duration)
+        return result</code></pre>
+    </div>
+    <div class="principle" style="margin-top:16px; max-width:none;">
+      <b>Tracing ≠ evaluation</b>
+      <p>Phoenix traces every turn — did this work correctly, technically, including exactly how long STT/TTS took on a voice turn versus the Claude calls. The Sampled evaluator scores 5–10% against the MITI rubric — was this a <em>good</em> response. Both matter, for different questions.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>11. Suggested project layout</h2>
+      <p>Every stage in <code>pipeline/stages/</code> is a plain function — typed input in, typed output out. That's what keeps <code>orchestrator.py</code> readable and each stage unit-testable without a running server.</p>
+    </div>
+    <pre class="code"><code>backend/
+  app/
+    main.py                      # FastAPI app, middleware, router mounting
+    middleware/
+      session.py                  # §7 — cookie issuance/validation
+      rate_limit.py                # §8 — slowapi config
+    pipeline/
+      orchestrator.py              # runs the 12 stages, handles branches
+      stages/
+        ingest.py                   # §4 stage 1 — calls clients/stt.py for audio
+        safety_gate.py
+        classify.py
+        memory_read.py             # §2 — reads both memory horizons
+        eligibility_gate.py
+        retrieval.py
+        orchestrator_judgment.py   # the LLM-discretion stage itself
+        generate.py                 # §6 — assembles system/messages
+        guardrail_check.py
+        memory_write.py             # §2, §5 — writes turns, calls clients/tts.py
+      summarizer.py                 # stage 11, async
+      evaluator.py                  # stage 12, async, sampled
+    clients/
+      claude.py                     # model-tier config lives here
+      voyage.py
+      stt.py                         # §5 — transcribe + discard, provider TBD
+      tts.py                         # §5 — synthesize, provider TBD
+      db.py                         # SQLAlchemy session/engine — talks to Supabase,
+                                      # content and user tables both
+    models/                         # mirrors vector-database.md §2
+      user_sessions.py
+      conversation_turns.py         # §2
+      user_checkins.py
+      user_memory_summary.py
+      evaluator_scores.py
+      redirect_templates.py
+      safety_patterns.py
+      helplines.py
+    jobs/
+      cleanup.py                    # §9
+      scheduler.py                   # APScheduler wiring
+    telemetry/
+      phoenix_setup.py               # §10
+  alembic/                           # migration history
+  tests/
+    pipeline/                        # one test module per stage</code></pre>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Open items</h2></div>
+    <div class="findings">
+      <div class="finding">
+        <span class="sev done">Resolved this pass</span>
+        <h4>Safety gate needed conversation memory</h4>
+        <p>Was a build-blocker in <em>pipeline.html</em> — resolved by <code>conversation_turns</code> + <code>last_crisis_card_shown_at</code> above (§2). That doc's Open Items entry now points here.</p>
+      </div>
+      <div class="finding">
+        <span class="sev verify">Verify against docs</span>
+        <h4>STT and TTS providers are unresolved</h4>
+        <p>Needs evaluation against real Hindi/Hinglish audio before locking in — same posture as the embedding provider decision. Don't guess a specific model/API shape yet.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Voice duration cap (60–90s) is a guess</h4>
+        <p>Not validated — see §5.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Voice latency — accept it, or stream TTS?</h4>
+        <p>Named as a real UX question in §5, not decided. Affects how complex the TTS integration needs to be for v1.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Conversation buffer window (2h / 12 rows) is a guess</h4>
+        <p>Not validated — tune once real conversations show how much history is useful before it's noise.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Does the 2-week cleanup window reset on activity?</h4>
+        <p>Written as "yes" (§9) since that read the requirement most naturally — confirm before it ships.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Summarizer: APScheduler or inline on write?</h4>
+        <p>Same open decision as <em>pipeline.html</em> and <em>vector-database.md</em> — this doc assumes periodic as the default, not locked in.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Hybrid search is written but not wired in</h4>
+        <p>The RRF query in <em>vector-database.md</em> §3 — add it only if pure vector search is observed missing an exact-phrase match. Don't build preemptively.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Rate-limit numbers are starting guesses</h4>
+        <p>20/10min per session, 200/10min per IP — tune from real traffic, not assumption.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Stage numbers in §4 match <em>docs/pipeline.html</em> exactly. Schema referenced throughout matches <em>docs/vector-database.md</em> §2 — if either changes, this doc needs updating alongside it.
+  </footer>
+
+</div>
+</body>
+</html>
