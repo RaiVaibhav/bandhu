@@ -480,7 +480,7 @@
           <tr>
             <td class="msg">"idk" / a single 😑</td>
             <td><span class="pathstep">Classify returns <b>low confidence</b> → Orchestrator defaults to open acknowledgment, no forced tag or suggestion</span></td>
-            <td class="note">Classify needs an explicit low-confidence path — don't force-fit to the nearest emotion category. <span class="flag amber">decision needed</span></td>
+            <td class="note">Resolved — see <em>backend-architecture.md</em> §4 stage 3 / <code>app/pipeline/stages/classify.py</code>. Malformed or out-of-schema model output now falls back to the same low-confidence result, verified against both a genuinely ambiguous message and a broken JSON response.</td>
           </tr>
         </tbody>
       </table>

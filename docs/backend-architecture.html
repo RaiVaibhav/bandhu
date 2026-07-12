@@ -198,6 +198,7 @@
         <tbody>
           <tr><td class="k">Web framework</td><td>FastAPI</td><td>Async-native — one process handles many concurrent turns. Pydantic validation catches shape bugs before a stage sees them.</td></tr>
           <tr><td class="k">Database</td><td>Supabase (PostgreSQL + <code>pgvector</code>)</td><td>One database, content and user data both. Free tier, no separate vector-database service. Also holds the conversation buffer (§2). See <em>vector-database.md</em> §1.</td></tr>
+          <tr><td class="k">Object storage</td><td>Supabase Storage</td><td>S3-compatible, same free project — holds image creations (§12) and curated Listen audio (§13). Poems are plain text and skip this.</td></tr>
           <tr><td class="k">ORM / migrations</td><td>SQLAlchemy + Alembic</td><td>Table defs as Python classes; schema changes become reviewable migrations.</td></tr>
           <tr><td class="k">Embeddings</td><td>Voyage AI</td><td>Anthropic has no embeddings API.</td></tr>
           <tr><td class="k">Generation</td><td>Claude (official <code>anthropic</code> SDK)</td><td>Per the model-tier table in <em>vector-database.md</em> §1.</td></tr>
@@ -205,7 +206,7 @@
           <tr><td class="k">Text-to-speech</td><td>Not locked <span class="badge-tbd">TBD</span></td><td>Same language bar, plus voice warmth matters for a companion. Candidates: ElevenLabs, Sarvam AI. See §5.</td></tr>
           <tr><td class="k">Rate limiting</td><td><code>slowapi</code></td><td>In-memory backend is enough for one instance — see §8.</td></tr>
           <tr><td class="k">Scheduled jobs</td><td>APScheduler, in-process</td><td>Runs cleanup + Summarizer with no extra service. See §9.</td></tr>
-          <tr><td class="k">Telemetry</td><td>Arize Phoenix + OpenTelemetry</td><td>See §10.</td></tr>
+          <tr><td class="k">Telemetry</td><td>Langfuse Cloud (free Hobby tier) + OpenTelemetry</td><td>Originally Phoenix; switched after comparing free-tier options — see §10.</td></tr>
         </tbody>
       </table>
     </div>
@@ -248,11 +249,18 @@
 
     <div class="code-block">
       <div class="code-label">Read query — Memory read, stage 4</div>
-      <pre class="code"><code>SELECT role, content FROM conversation_turns
-WHERE session_id = $1
-  AND created_at &gt; now() - interval '2 hours'
-ORDER BY created_at ASC
-LIMIT 12;</code></pre>
+      <pre class="code"><code>SELECT role, content, created_at FROM (
+  SELECT role, content, created_at FROM conversation_turns
+  WHERE session_id = $1
+    AND created_at &gt; now() - interval '2 hours'
+  ORDER BY created_at DESC
+  LIMIT 12
+) recent
+ORDER BY created_at ASC;</code></pre>
+    </div>
+    <div class="principle" style="margin-top:12px; max-width:none;">
+      <b>Why the subquery, not a single ORDER BY ... ASC LIMIT 12</b>
+      <p>A single ascending-order query with <code>LIMIT 12</code> returns the <em>oldest</em> 12 turns inside the 2-hour window, not the most recent 12 — wrong once a conversation has more than 12 turns in that window. The inner query grabs the most recent 12 (descending, limited), the outer query re-sorts that small set back into chronological order for the <code>messages</code> array.</p>
     </div>
 
     <div class="principles" style="margin-top:16px;">
@@ -354,6 +362,7 @@ LIMIT 12;</code></pre>
       <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Normalized message only</div></div>
       <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude fast-tier call → emotion/category/intensity tags, or a special-case flag (medical doubt, disorder, medication question).</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>tags{}</code> or <code>special_case</code> — special case short-circuits to the fixed redirect branch.</div></div>
+      <div class="sd-row"><div class="sd-label">Low-confidence path</div><div class="sd-val">Resolves <em>pipeline.html</em>'s "needs an explicit low-confidence path" open item. A genuinely ambiguous message ("idk", a bare emoji) or a malformed/out-of-schema model response both resolve to <code>confidence: "low"</code> with every tag <code>null</code> — never force-fit onto the nearest category. See <code>app/pipeline/stages/classify.py</code>.</div></div>
     </div>
 
     <div class="stage-detail">
@@ -378,6 +387,7 @@ LIMIT 12;</code></pre>
       <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Classify's <code>tags</code> + language</div></div>
       <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val"><code>pgvector</code> query — metadata filter then similarity, top 2-3 (<em>vector-database.md</em> §3). Keeps search anchored to what was just said, not drifting with dialogue.</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>retrieved_chunks[]</code></div></div>
+      <div class="sd-row"><div class="sd-label">Deferred</div><div class="sd-val">A Redis/Upstash cache in front of this stage was proposed in an earlier doc (<em>rag-components.html</em>). Not built — see Open Items for the corrected design.</div></div>
     </div>
 
     <div class="stage-detail" style="border-color:var(--accent); background:var(--accent-soft);">
@@ -414,9 +424,9 @@ LIMIT 12;</code></pre>
 
     <div class="stage-detail async">
       <div class="sd-head"><span class="sd-num">11</span><h3>Summarizer</h3><span class="sd-short">async · periodic</span></div>
-      <div class="sd-plain"><b>In plain terms</b>Every so often, not every turn, take stock — look back at recent facts and rewrite the longer-term summary in a few sentences, so a later conversation still feels like it remembers an earlier one, without ever storing or repeating exact quotes.</div>
-      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Accumulated <code>user_checkins</code> facts since last run</div></div>
-      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude mid-tier, synthesizes a few-sentence narrative. <b>Does not</b> read <code>conversation_turns</code> — summarizes facts, not raw dialogue.</div></div>
+      <div class="sd-plain"><b>In plain terms</b>Every so often, not every turn, take stock — look back at recent facts (and anything created, §12) and rewrite the longer-term summary in a few sentences, so a later conversation still feels like it remembers an earlier one, without ever storing or repeating exact quotes.</div>
+      <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Accumulated <code>user_checkins</code> facts since last run, plus any <code>user_creations.caption</code> rows in the window (§12)</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude mid-tier, synthesizes a few-sentence narrative. <b>Does not</b> read <code>conversation_turns</code>, a full poem, or a stored file — facts and short captions only, never raw dialogue or the creative work itself.</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val">Updates <code>user_memory_summary</code></div></div>
     </div>
 
@@ -607,15 +617,32 @@ async def message(...): ...</code></pre>
 
   <section>
     <div class="section-head">
-      <h2>10. Telemetry — Phoenix</h2>
-      <p>An LLM pipeline fails silently far more than it crashes — Phoenix is how you see that happening instead of hearing about it from a screenshot later.</p>
+      <h2>10. Telemetry — Langfuse</h2>
+      <p>An LLM pipeline fails silently far more than it crashes — telemetry is how you see that happening instead of hearing about it from a screenshot later.</p>
+    </div>
+    <div class="principle blue" style="max-width:none;">
+      <b>Why Langfuse over the originally-planned Phoenix</b>
+      <p>Both are free at this project's scale (Langfuse Hobby: 50,000 units/month, 30-day retention; Phoenix AX Free: 25,000 spans/month, 15-day retention). The deciding factors were fit, not cost — Langfuse's session view groups every span under one <code>bandhu_sid</code> across a multi-turn conversation, and its scores view maps directly onto stage 12's sampled Evaluator. Phoenix's dedicated retrieval-span rendering was a real edge, but that's just a few structured attributes either way — not worth losing the other two for.</p>
     </div>
     <div class="code-block">
-      <div class="code-label">Setup — auto-instruments every Claude call</div>
-      <pre class="code"><code>from phoenix.otel import register
+      <div class="code-label">Setup — same AnthropicInstrumentor, exporter now points at Langfuse's OTLP endpoint</div>
+      <pre class="code"><code>import base64
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from openinference.instrumentation.anthropic import AnthropicInstrumentor
 
-tracer_provider = register(project_name="bandhu", endpoint="http://localhost:6006/v1/traces")
+auth = base64.b64encode(
+    f"{settings.langfuse_public_key}:{settings.langfuse_secret_key}".encode()
+).decode()
+
+tracer_provider = TracerProvider()
+tracer_provider.add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter(
+        endpoint="https://cloud.langfuse.com/api/public/otel/v1/traces",
+        headers={"Authorization": f"Basic {auth}"},
+    ))
+)
 AnthropicInstrumentor().instrument(tracer_provider=tracer_provider)</code></pre>
     </div>
     <div class="code-block">
@@ -630,9 +657,27 @@ def transcribe(audio_bytes):
         span.set_attribute("stt.duration_seconds", result.duration)
         return result</code></pre>
     </div>
+    <div class="code-block">
+      <div class="code-label">Retrieval — structured attributes stand in for Phoenix's dedicated panel</div>
+      <pre class="code"><code>def retrieve(query_embedding, filters):
+    with tracer.start_as_current_span("retrieval") as span:
+        results = vector_search(query_embedding, filters)
+        span.set_attribute("retrieval.result_count", len(results))
+        span.set_attribute("retrieval.entry_keys", [r.entry_key for r in results])
+        span.set_attribute("retrieval.top_similarity", results[0].similarity if results else 0)
+        return results</code></pre>
+    </div>
+    <div class="principle" style="margin-top:16px; max-width:none;">
+      <b>Content control — what actually leaves the server</b>
+      <p><code>AnthropicInstrumentor</code> captures full prompt/completion text by default — the wrong default for a mental-health check-in product. <code>TelemetryConfig</code> (in <code>app/config.py</code>) splits logging into two tiers: metadata (stage, latency, tokens, model, <code>session_id</code>, errors) always logs; raw message/prompt/retrieval-content fields are opt-in per field, off unless explicitly turned on — enforced at each span-creation call site, not just noted here.</p>
+    </div>
+    <div class="principle crisis" style="margin-top:16px; max-width:none;">
+      <b>Open gap — session_id outlives the 14-day cleanup guarantee</b>
+      <p>Langfuse's 30-day retention is longer than <code>user_sessions</code>' 14-day cascade-delete window (§9) — a person's <code>session_id</code> can exist in Langfuse up to 16 days after its row is deleted. Not resolved: hash/truncate <code>session_id</code> before it's attached to a span (closes the gap, breaks Langfuse's session-grouping view) versus documenting this as an accepted exception. Tracked in Open Items.</p>
+    </div>
     <div class="principle" style="margin-top:16px; max-width:none;">
       <b>Tracing ≠ evaluation</b>
-      <p>Phoenix traces every turn — did this work correctly, technically, including exactly how long STT/TTS took on a voice turn versus the Claude calls. The Sampled evaluator scores 5–10% against the MITI rubric — was this a <em>good</em> response. Both matter, for different questions.</p>
+      <p>Langfuse traces every turn — did this work correctly, technically, including exactly how long STT/TTS took on a voice turn versus the Claude calls. The Sampled evaluator scores 5–10% against the MITI rubric — was this a <em>good</em> response. Both matter, for different questions.</p>
     </div>
   </section>
 
@@ -644,6 +689,9 @@ def transcribe(audio_bytes):
     <pre class="code"><code>backend/
   app/
     main.py                      # FastAPI app, middleware, router mounting
+    creations.py                  # §12 — separate from pipeline/, its own write path
+    breathe.py                    # §13 — direct content query, bypasses pipeline/ entirely
+    listen.py                     # §13 — direct content query, bypasses pipeline/ entirely
     middleware/
       session.py                  # §7 — cookie issuance/validation
       rate_limit.py                # §8 — slowapi config
@@ -667,12 +715,15 @@ def transcribe(audio_bytes):
       voyage.py
       stt.py                         # §5 — transcribe + discard, provider TBD
       tts.py                         # §5 — synthesize, provider TBD
+      storage.py                     # §12/§13 — Supabase Storage client, image creations + audio tracks
       db.py                         # SQLAlchemy session/engine — talks to Supabase,
                                       # content and user tables both
     models/                         # mirrors vector-database.md §2
       user_sessions.py
       conversation_turns.py         # §2
       user_checkins.py
+      user_creations.py             # §12
+      audio_tracks.py                # §13
       user_memory_summary.py
       evaluator_scores.py
       redirect_templates.py
@@ -682,10 +733,78 @@ def transcribe(audio_bytes):
       cleanup.py                    # §9
       scheduler.py                   # APScheduler wiring
     telemetry/
-      phoenix_setup.py               # §10
+      langfuse_setup.py              # §10
   alembic/                           # migration history
   tests/
     pipeline/                        # one test module per stage</code></pre>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>12. Creations — image and poem</h2>
+      <p>Not part of the check-in pipeline's 12 stages — a separate feature (the "Co-Create" screen) with its own write path, that later feeds <em>into</em> the pipeline via the Summarizer (stage 11, §4). <b>Music was originally in scope here — corrected:</b> what <em>ux-flow.html</em> calls "Listen" turned out to be Bandhu-provided curated audio, not something the person creates. Different enough to be its own section — see §13.</p>
+    </div>
+
+    <div class="principle blue" style="max-width:none; margin-bottom:20px;">
+      <b>Two Home-screen buttons, one flow</b>
+      <p>"Write Together" and "Poem" both lead here — two entry points into the same <code>user_creations</code> write path, not two separate features. No schema or backend implication, just worth knowing so nothing gets built twice.</p>
+    </div>
+
+    <div class="flow">
+      <div class="flow-step">Person creates something in the app</div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step">Poem? → plain text, straight into <code>user_creations.text_content</code> — no storage bucket</div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step">Image? → uploaded to Supabase Storage; <code>storage_path</code> stores the path, not the file</div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-step">Either way: a short <code>caption</code> is written alongside it — a description of the thing, not the thing itself</div>
+    </div>
+
+    <div class="principle accent" style="margin-top:20px; max-width:none;">
+      <b>Why a caption, not the raw content, is what the Summarizer reads</b>
+      <p>Same principle as <code>conversation_turns</code> vs. <code>user_memory_summary</code> in §2 — the long-term narrative carries an impression ("wrote something about feeling stuck this week"), never a replay of someone's actual creative work. It's also what keeps the Summarizer's Claude call cheap and bounded — a caption is a sentence; a poem or an image is not.</p>
+    </div>
+
+    <div class="principles" style="margin-top:16px;">
+      <div class="principle">
+        <b>Retention: same 14-day window as everything else</b>
+        <p><code>user_creations.session_id</code> cascades from <code>user_sessions</code> like every other user table (<em>vector-database.md</em> §2) — no special lifecycle, per your call. Not treated as more permanent than a check-in.</p>
+      </div>
+      <div class="principle">
+        <b>Storage cleanup gap, worth naming</b>
+        <p>The cleanup job (§9) deletes the <code>user_creations</code> <em>row</em> via cascade, but that doesn't delete the <em>file</em> in Supabase Storage — Postgres cascades don't reach object storage. Left open (§14), not solved here.</p>
+      </div>
+    </div>
+
+    <div class="principle" style="margin-top:16px; max-width:none; background:var(--surface); border-color:var(--border);">
+      <b style="color:var(--ink);">Still an open README-level question</b>
+      <p><em>ux-flow.html</em> itself flags Co-Create as "additive, scope risk — ship in v1, or wait for the core loop to be validated first." Schema and write path exist now per your explicit call to build them, but that doesn't resolve the underlying product question — worth a real decision before this reaches real users, not just an implementation.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>13. Direct-entry features — Breathe and Listen</h2>
+      <p>Two more Home-screen buttons that, like Creations, sit outside the 12-stage check-in pipeline — but for a different reason: the person is asking for something directly, no Classify/Safety-gate/Orchestrator judgment needed at all. Building these as pipeline stages would model a decision nobody needs to make.</p>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="label">Breathe</div>
+        <h3>Direct grounding-content query</h3>
+        <p>Same <code>content_entries</code> table Retrieval (§4 stage 6) uses, filtered to <code>category = 'grounding-technique'</code> — no vector similarity, no message to embed. Still logs a lightweight <code>user_checkins</code> row (<code>theme='breathing'</code>) so the Summarizer's bigger picture includes it, the same reason Creations exists.</p>
+      </div>
+      <div class="card">
+        <div class="label">Listen</div>
+        <h3>Direct audio_tracks query</h3>
+        <p>Filters <code>audio_tracks</code> (<em>vector-database.md</em> §2) by mood tag, with a sensible default when there's no prior context. No Claude call needed — a filtered lookup against a small curated table, same shape as <code>redirect_templates</code>.</p>
+      </div>
+    </div>
+
+    <div class="principle crisis" style="margin-top:20px; max-width:none;">
+      <b>Both have the same real blocker, just from different angles</b>
+      <p>Breathe can be fully built and still have nothing real to serve — <code>knowledge-base/OPEN_QUESTIONS.md</code> already flags that no breathing/relaxation script has been sourced (mhGAP doesn't cover it). Listen has the mirror problem: nobody has sourced or licensed any actual audio tracks yet (<em>vector-database.md</em> §5). Worth stating plainly so "the button works" doesn't get confused with "there's something good behind it." Both are also still the same open README-level scope question as Creations — additive, not confirmed for v1.</p>
+    </div>
   </section>
 
   <section>
@@ -735,6 +854,41 @@ def transcribe(audio_bytes):
         <span class="sev decide">Decision needed</span>
         <h4>Rate-limit numbers are starting guesses</h4>
         <p>20/10min per session, 200/10min per IP — tune from real traffic, not assumption.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4><code>user_creations.caption</code> — who writes it?</h4>
+        <p>The person typing their own short description vs. a Claude call generating one automatically (§12) are genuinely different builds — the second needs a new Claude call in the creation write path.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Deleting a creation doesn't delete its file</h4>
+        <p>The 14-day cascade (§12) only reaches Postgres rows, not Supabase Storage objects. Needs a periodic cleanup job or a Storage lifecycle rule, once chosen.</p>
+      </div>
+      <div class="finding">
+        <span class="sev verify">Verify against docs</span>
+        <h4>No breathing content exists yet</h4>
+        <p>Backend path (§13) can be fully built with nothing real behind it — same gap already logged in <em>knowledge-base/OPEN_QUESTIONS.md</em>, easy to lose track of once the endpoint "works."</p>
+      </div>
+      <div class="finding">
+        <span class="sev verify">Verify against docs</span>
+        <h4>No audio tracks sourced or licensed</h4>
+        <p>Same shape of gap as breathing content (§13, <em>vector-database.md</em> §5) — a content/rights question, not a schema one.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>Co-Create and Listen are still an open README-level product decision</h4>
+        <p>Ship in v1, or wait for the core loop to validate first (§12, §13, <em>docs/ux-flow.html</em>). Building the backend doesn't resolve this — it just means the decision is now the only thing blocking either from shipping.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>session_id in Langfuse outlives the 14-day cleanup guarantee</h4>
+        <p>Langfuse's 30-day retention (§10) means a person's <code>session_id</code> can exist there up to 16 days after its row is deleted from <code>user_sessions</code>. Hash/truncate before it reaches a span, or document as an accepted exception — not decided.</p>
+      </div>
+      <div class="finding">
+        <span class="sev done">Deferred, not dropped</span>
+        <h4>Retrieval cache (§4 stage 6)</h4>
+        <p><em>rag-components.html</em> (predates the single-Supabase pivot) proposed a Redis/Upstash cache sized to skip both the embedding call and the <code>pgvector</code> query on a near-duplicate check-in — that combination doesn't actually hold, since detecting a near-duplicate requires embedding the message first. Corrected design if ever built: an <b>exact-text cache</b> (hash the raw message, skips embedding on a literal repeat) and a separate <b>similarity cache</b> (skips only the <code>pgvector</code> query once the embedding exists). Not worth building now — no traffic volume yet, same tradeoff already declined for Celery/Redis. Revisit once real Voyage embedding-call costs are visible.</p>
       </div>
     </div>
   </section>

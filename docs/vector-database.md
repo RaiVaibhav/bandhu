@@ -21,6 +21,10 @@ This has changed twice already in this doc's history, worth being upfront about 
 
 **Why Supabase specifically, over Neon or a bare self-hosted Postgres**: a genuinely persistent free tier (not a sandbox), `pgvector` supported out of the box, and a managed dashboard that's friendlier for a first backend project than raw `psql` against a self-hosted instance. Neon is a reasonable alternative with a similar free tier — either is fine; Supabase is the one actually being used here per your call.
 
+### Object storage — Supabase Storage, for the one kind of data that genuinely doesn't belong in Postgres
+
+Images the person creates (see §2's `user_creations` table) are binary files, not rows — putting them directly in Postgres works but isn't what a relational database is built for. Supabase bundles S3-compatible object storage in the same free project already being used for everything else, so this isn't a new account or a new cost, just a different piece of the same platform. Poems are plain text and don't need this — they go straight into a column, same as any other text. The same bucket also holds the curated audio files for **Listen** (§2's `audio_tracks` table) — a different, non-personal use of the same storage mechanism, covered separately below since it's Bandhu-provided content, not something the person made (see `backend-architecture.md` §13 for why these turned out to be two different features, not one).
+
 ### Embedding provider — not Anthropic
 
 **Important, and worth stating plainly: Claude does not have a native embeddings API.** The Messages API, tool use, batches, and files are all Claude does — embeddings are a different capability from a different kind of model entirely (a vector encoder, not a generative model). Anthropic's own documented recommendation for this is **Voyage AI**, and specifically a model in their multilingual line — which matters here more than usual, since a generic English-only embedding model will perform badly on Hindi and Hinglish check-ins, and vernacular support is a stated core requirement, not a nice-to-have.
@@ -216,6 +220,60 @@ CREATE INDEX user_checkins_recent_idx ON user_checkins (session_id, created_at D
 
 
 -- ============================================================
+-- User creations — images and poems the person made (NOT music — Listen,
+-- below, turned out to be Bandhu-provided curated audio, not something the
+-- person creates; see backend-architecture.md §13 for how that got clarified).
+-- Captioned for the Summarizer's bigger-picture narrative (stage 11 reads
+-- `caption`, never `text_content` or the stored file itself — same
+-- "impression, not replay" principle as everywhere else memory shows up in
+-- this design). Same 14-day retention as everything else — cascades away
+-- with the session, no special lifecycle of its own.
+-- "Write Together" and "Poem" are two Home-screen entry points into this
+-- same table/flow, not two separate features — no schema implication.
+-- ============================================================
+CREATE TABLE user_creations (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id     UUID NOT NULL REFERENCES user_sessions(session_id) ON DELETE CASCADE,
+  creation_type  TEXT NOT NULL CHECK (creation_type IN ('image','poem')),
+  text_content   TEXT,          -- populated for 'poem' only — the poem itself, plain text
+  storage_path   TEXT,          -- populated for 'image' only — path into the Supabase
+                                 -- Storage bucket, not the file itself
+  caption        TEXT NOT NULL, -- short description of what this is — this is what stage 11
+                                 -- actually reads, never the full poem or the file
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX user_creations_session_idx ON user_creations (session_id, created_at DESC);
+-- Exactly one of text_content / storage_path should be populated, matching creation_type.
+-- A CHECK constraint spanning nullable columns tied to a third column's value is awkward
+-- in Postgres — this is enforced at the application layer, not the database, worth knowing.
+
+
+-- ============================================================
+-- Listen — curated audio tracks Bandhu offers, NOT user-generated. Shared,
+-- non-personal content (belongs conceptually with content_entries and
+-- redirect_templates, not with per-user data), so no session_id here. Not
+-- vector-embedded — a small curated set, filtered by mood_tags directly
+-- rather than similarity search, same pattern as redirect_templates' direct
+-- category lookup.
+-- ============================================================
+CREATE TABLE audio_tracks (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title         TEXT NOT NULL,
+  storage_path  TEXT NOT NULL,     -- path into Supabase Storage — the actual audio file
+  mood_tags     TEXT[] NOT NULL DEFAULT '{}',  -- e.g. 'anxious', 'low-energy' — matched against
+                                                -- the same tags Classify already produces
+  duration_seconds INTEGER,
+  status        TEXT NOT NULL CHECK (status IN ('ai-drafted','self-vetted','pending-professional-review','professional-reviewed')),
+  active        BOOLEAN NOT NULL DEFAULT true,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX audio_tracks_mood_idx ON audio_tracks USING gin (mood_tags);
+-- The `status` gate reuses VETTING.md's enum even though there's no clinical content here —
+-- licensing/rights-clearance for each track is its own review step, and this column is where
+-- that gets tracked, so "vetted" means "cleared to use," not just "sounds nice."
+
+
+-- ============================================================
 -- Summarizer output — the rolling narrative (pipeline.html stage 11)
 -- ============================================================
 CREATE TABLE user_memory_summary (
@@ -324,3 +382,7 @@ No automatic chunking algorithm needed. Per `VETTING.md`, every entry is already
 - **`conversation_turns`' read-time window (2 hours / last 12 rows) is a starting guess**, not validated — see `backend-architecture.md` §2. Storage retention is already bounded (14-day cascade); this is purely about how much recent dialogue a single Claude call gets shown.
 - **High-risk knowledge-base files are `self-vetted`, not `professional-reviewed`, as of 2026-07-11** — the ingestion gate (§4) correctly blocks them from `redirect_templates`/`safety_patterns` until that changes; noting it here too so this doc doesn't read as if they're live.
 - **Resolved by this pass, noted so it isn't re-litigated**: `suggestion_entry_key` is a real foreign key again (§2) — the cross-database/cross-system referential-integrity gap from the two prior versions of this doc no longer exists, since everything lives in one Supabase database now. Similarly, `no_high_risk_embedding` is a real `CHECK` constraint again, not an application-level-only promise.
+- **`user_creations.caption` — who writes it, isn't decided.** Options: the person types their own short description when they create something, or a Claude call looks at the poem/image and writes one automatically. Affects whether this needs a Claude call in the creation flow at all, and whether a caption could ever say something the person didn't intend — worth a real decision, not a default.
+- **`user_creations`'s exactly-one-of-`text_content`/`storage_path` rule is application-level only** (§2) — same category of gap as the embedding risk-tier constraint used to be, just not one Postgres can enforce here regardless of which database technology is used, since it depends on a third column's value.
+- **`audio_tracks` needs an actual curated source, and real rights clearance.** The table assumes someone (you) picks and licenses a small set of tracks — nothing here sources them. This is a content/legal question, not a schema one, and worth resolving before `active` is ever set `true` on a real row, same spirit as `VETTING.md`'s stance on the redirect templates.
+- **Co-Create and Listen are both still an open README-level product decision** — ship in v1, or wait for the core loop to validate first (`docs/ux-flow.html`'s own note). Schema exists for both now per your explicit call to build them, but that doesn't resolve the underlying product question — worth revisiting explicitly before either ships to real users.

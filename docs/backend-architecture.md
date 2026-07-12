@@ -12,9 +12,10 @@ Written for a first backend project specifically — each section says *what* to
 
 | Layer | Choice | Why |
 |---|---|---|
-| Language | Python | Your call, confirmed. Also the natural fit — every other piece here (Anthropic SDK, Voyage SDK, `psycopg`/`supabase-py`, `arize-phoenix`) has a first-class Python client. |
+| Language | Python | Your call, confirmed. Also the natural fit — every other piece here (Anthropic SDK, Voyage SDK, `psycopg`/`supabase-py`, OpenTelemetry) has a first-class Python client. |
 | Web framework | FastAPI | Async-native, which matters because almost everything this backend does is waiting on a network call (Claude, Voyage, Postgres, and now STT/TTS) rather than computing — async lets one process handle many concurrent turns instead of one thread blocking per request. Also gives you request/response validation via Pydantic for free, which catches shape bugs before they reach a pipeline stage. |
 | Database | Supabase (PostgreSQL + `pgvector`) | One database, content and user data both — per `vector-database.md` §1. Free tier, no separate vector-database service to run. Also holds the conversation buffer (§2) — no separate memory store needed. |
+| Object storage | Supabase Storage | S3-compatible, same free Supabase project — holds image creations (§12) and curated Listen audio (§13). Poems are plain text and skip this entirely. |
 | ORM / migrations | SQLAlchemy + Alembic | SQLAlchemy is the standard Python ORM (keeps table definitions as Python classes instead of hand-written SQL scattered through the app); Alembic tracks schema changes as versioned migration files, so "add a column" becomes a reviewable diff instead of a manual `ALTER TABLE` you have to remember to run against every environment. |
 | Embeddings | Voyage AI | Per `vector-database.md` §1 — Anthropic has no embeddings API. |
 | Generation | Claude (Anthropic SDK, official `anthropic` Python package) | Per the model-tier table in `vector-database.md` §1. |
@@ -22,7 +23,7 @@ Written for a first backend project specifically — each section says *what* to
 | Text-to-speech | Not locked — see §5 | Same language requirement, plus voice quality/warmth matters for a companion product specifically. Candidates: ElevenLabs (strong multilingual quality), Sarvam AI (India-first voices). |
 | Rate limiting | `slowapi` | A FastAPI-native wrapper around the `limits` library — in-memory backend by default, which is enough for a single-instance solo deployment (see §8's note on when this stops being true). |
 | Scheduled jobs | APScheduler (in-process) | Runs the cleanup job (§9) and can run the Summarizer (stage 11 below) without standing up a separate task queue. Simplest thing that works at this scale — see §9 for the upgrade path if job volume ever grows. |
-| Telemetry | Arize Phoenix + OpenTelemetry | Per the original ask — see §10. |
+| Telemetry | Langfuse Cloud (free Hobby tier) + OpenTelemetry | Originally Phoenix per the original ask; switched after comparing free-tier options — see §10 for the reasoning and the open item on session-id retention. |
 
 ---
 
@@ -45,13 +46,18 @@ This is a core component for a chatbot flow specifically, not incidental plumbin
 
 **Read query** (Memory read, stage 4):
 ```sql
-SELECT role, content FROM conversation_turns
-WHERE session_id = $1
-  AND created_at > now() - interval '2 hours'
-ORDER BY created_at ASC
-LIMIT 12;
+SELECT role, content, created_at FROM (
+  SELECT role, content, created_at FROM conversation_turns
+  WHERE session_id = $1
+    AND created_at > now() - interval '2 hours'
+  ORDER BY created_at DESC
+  LIMIT 12
+) recent
+ORDER BY created_at ASC;
 ```
 The 2-hour filter is what makes this "same sitting" without tracking session boundaries explicitly — it's just "is the last thing said recent enough to still be a live conversation." Come back tomorrow and this returns nothing; the long-term summary — already synthesized, already softened — is what carries continuity across that gap, not a raw quote from yesterday surfacing unprompted today.
+
+**Why the subquery, not a single `ORDER BY ... ASC LIMIT 12`**: a single ascending-order query with `LIMIT 12` returns the *oldest* 12 turns inside the 2-hour window, not the most recent 12 — wrong once a conversation has more than 12 turns in that window, since it would show Claude stale early turns and silently drop the most recent ones. The inner query grabs the most recent 12 (descending, limited), the outer query just re-sorts that small set back into chronological order for the `messages` array.
 
 **Write** (Memory write, stage 10): after Generate produces a reply, insert two rows — the person's message (transcribed text, if voice) and Bandhu's reply, both under the current `session_id`. No trimming needed at write time: the 14-day cascade from `user_sessions` already bounds total storage (`vector-database.md` §2), and the read query above is what bounds how much of it Claude actually sees on any given turn.
 
@@ -86,7 +92,7 @@ Browser                    FastAPI                          External systems
    │                          │  Summarizer (periodic) ──► user_memory_summary
    │                          │  Sampled evaluator ──────► evaluator_scores
    │                          │
-   │                          │  Every stage emits an OpenTelemetry span → Phoenix (§10)
+   │                          │  Every stage emits an OpenTelemetry span → Langfuse (§10)
 ```
 
 **Steps before the pipeline are synchronous** — the person is waiting. The async tail runs after the response is already sent (FastAPI's `BackgroundTasks`, or picked up by APScheduler on its own schedule) — nothing about summarization or evaluation should add latency to the thing someone's actually staring at. The pipeline orchestrator itself is not one function — it's the 12 stages below as separate, individually testable steps, with the branches (crisis response, special-case redirect, thinking-trap re-entry) as early returns out of that sequence.
@@ -112,8 +118,9 @@ Every stage: the plain-language version of what it's for, then what it receives,
 **3 — Classify**
 - *In plain terms*: a quick read on the emotional tone of just this message — sad, anxious, stressed. Also catches a few danger zones ("do I have depression," "what medication should I take") and routes those to a pre-written, careful redirect instead of letting anything improvise an answer.
 - *Input*: normalized message only (not the buffer — classification is about what *this* message contains, not the conversation's drift)
-- *Logic*: Claude fast-tier call; produces emotion/category/intensity tags, or flags one of the 4 special-case categories
+- *Logic*: Claude fast-tier call; produces emotion/category/intensity tags, or flags one of the 4 special-case categories (`redirect-medical`/`redirect-disorder`/`redirect-medication`/`redirect-document`, `vector-database.md` §2)
 - *Output*: `tags{}` or `special_case`. Special case → short-circuit to the fixed redirect-template branch, bypassing Retrieval/Orchestrator/Generate entirely.
+- *Low-confidence path* (resolves `pipeline.html`'s "Classify needs an explicit low-confidence path" open item): a genuinely ambiguous message ("idk", a bare emoji) — or a malformed/out-of-schema model response — both resolve to `confidence: "low"` with every tag left `null`, never force-fit onto the nearest category. The Orchestrator treats this the same way either way: default to a plain open acknowledgment, nothing forced. See `app/pipeline/stages/classify.py`.
 
 **4 — Memory read**
 - *In plain terms*: pull up who we're talking to — the last few things said in this sitting (so the reply doesn't sound like it forgot), and a softened, longer-term impression of how this person's been doing lately.
@@ -132,6 +139,7 @@ Every stage: the plain-language version of what it's for, then what it receives,
 - *Input*: Classify's `tags` + detected language (not the conversation buffer, deliberately — keeps search anchored to what was just said instead of drifting toward whatever the last few messages happened to be about)
 - *Logic*: `pgvector` query — metadata `WHERE` filter, then `ORDER BY embedding <=> ...`, top 2-3 chunks (`vector-database.md` §3)
 - *Output*: `retrieved_chunks[]`
+- *Deferred*: an earlier doc (`rag-components.html`) proposed a Redis/Upstash cache in front of this stage. Not built — no traffic volume yet to justify it, and it's another external service. See §14 for the corrected design if it's ever worth revisiting.
 
 **7 — Orchestrator (judgment)**
 - *In plain terms*: the one real decision in the whole flow. Everything gathered so far goes here, and it decides: acknowledge and stop, gently offer something, point out a thinking pattern, or just stay quiet. Quiet is the default — something has to earn its way into the reply.
@@ -158,9 +166,9 @@ Every stage: the plain-language version of what it's for, then what it receives,
 - *Output*: response sent to the browser — text always, audio alongside it if the turn was voice.
 
 **11 — Summarizer** *(async)*
-- *In plain terms*: every so often, not every turn, take stock — look back at recent facts and rewrite the longer-term summary in a few sentences, so a later conversation still feels like it remembers an earlier one, without ever storing or repeating exact quotes.
-- *Input*: accumulated `user_checkins` facts since the last run
-- *Logic*: Claude mid-tier call, synthesizes into a few-sentence narrative. Deliberately does **not** read `conversation_turns` — it summarizes structured facts, not raw dialogue, so "never a transcript" holds at the synthesis layer too, not just at storage.
+- *In plain terms*: every so often, not every turn, take stock — look back at recent facts (and anything created, per §12) and rewrite the longer-term summary in a few sentences, so a later conversation still feels like it remembers an earlier one, without ever storing or repeating exact quotes.
+- *Input*: accumulated `user_checkins` facts since the last run, plus any `user_creations.caption` rows in the same window (§12)
+- *Logic*: Claude mid-tier call, synthesizes into a few-sentence narrative. Deliberately does **not** read `conversation_turns`, the full text of a poem, or a stored image/audio file — it summarizes structured facts and short captions, never raw dialogue or the creative work itself, so "never a transcript" holds at the synthesis layer too, not just at storage.
 - *Output*: updates `user_memory_summary`
 
 **12 — Sampled evaluator** *(async)*
@@ -195,7 +203,7 @@ Browser records audio (MediaRecorder) ──► POST /message, audio blob
 
 **The privacy point, stated plainly**: a voice recording is a strictly more sensitive artifact than its text transcript — it carries tone, identity, and emotional state in a way text doesn't, especially for someone using this app in distress. The "never a data recap / never a permanent transcript" principle that already governs `conversation_turns` (§2) applies at least as strongly here, arguably more. The design commitment: **audio is transcribed and immediately discarded, never persisted** — not to a bucket, not to a temp table, not even transiently beyond what the STT call itself needs. Only the transcribed text ever reaches `conversation_turns` or `user_checkins`.
 
-**Duration/size cap before the STT call, not after**: STT is a paid, per-second API call — checking a clip's length client-side (or from the upload's byte size server-side) before sending it anywhere means a malicious or buggy oversized upload gets rejected for free, instead of after you've already paid to transcribe it. A starting cap (60–90 seconds per message) is a guess — see §12.
+**Duration/size cap before the STT call, not after**: STT is a paid, per-second API call — checking a clip's length client-side (or from the upload's byte size server-side) before sending it anywhere means a malicious or buggy oversized upload gets rejected for free, instead of after you've already paid to transcribe it. A starting cap (60–90 seconds per message) is a guess — see §14.
 
 ### Voice out — after stage 9, inside stage 10
 
@@ -216,7 +224,7 @@ Guardrail check passes ──► response_text finalized
 
 `response_text` is what gets stored (§2, §4 stage 10) and what gets spoken — TTS runs on it, doesn't replace it. That keeps the conversation buffer's content uniform (always text) regardless of input or output modality, so Orchestrator/Generate never need to branch on how a past turn was delivered.
 
-**Latency, named as a real UX concern, not solved here**: a voice turn now pays STT time, then the same two Claude calls (Orchestrator, Generate) a text turn pays, then TTS time. That's a longer round-trip than typing, and voice interactions are generally more latency-sensitive than text ones — a pause that reads as "thinking" in a chat window can read as "broken" in a voice call. Two options worth knowing about, neither committed to here: accept the added latency for a first version (simplest, and this pipeline's LLM calls are already the dominant cost, not the smallest part), or stream TTS synthesis as `response_text` is generated instead of waiting for the full string — meaningfully more complex to build correctly. Flagged in §12, not decided.
+**Latency, named as a real UX concern, not solved here**: a voice turn now pays STT time, then the same two Claude calls (Orchestrator, Generate) a text turn pays, then TTS time. That's a longer round-trip than typing, and voice interactions are generally more latency-sensitive than text ones — a pause that reads as "thinking" in a chat window can read as "broken" in a voice call. Two options worth knowing about, neither committed to here: accept the added latency for a first version (simplest, and this pipeline's LLM calls are already the dominant cost, not the smallest part), or stream TTS synthesis as `response_text` is generated instead of waiting for the full string — meaningfully more complex to build correctly. Flagged in §14, not decided.
 
 ---
 
@@ -330,21 +338,36 @@ Two details worth being deliberate about:
 
 ---
 
-## 10. Telemetry — Phoenix
+## 10. Telemetry — Langfuse
 
-The point of this, stated plainly since it's easy to skip when things seem to work: an LLM pipeline fails silently far more often than it crashes. A bad retrieval, a prompt that drifted, a stage that's slower than it should be — none of that throws an exception, it just quietly produces a worse response. Phoenix is how you see that happening instead of finding out from a bad screenshot someone sends you later.
+The point of this, stated plainly since it's easy to skip when things seem to work: an LLM pipeline fails silently far more often than it crashes. A bad retrieval, a prompt that drifted, a stage that's slower than it should be — none of that throws an exception, it just quietly produces a worse response. Telemetry is how you see that happening instead of finding out from a bad screenshot someone sends you later.
 
-**Setup**: `arize-phoenix` (self-hosted, run via `phoenix serve` or `docker run arizephoenix/phoenix`) plus OpenTelemetry auto-instrumentation:
+**Why Langfuse over the originally-planned Phoenix**: both are free at this project's scale (Langfuse Cloud's Hobby tier: 50,000 units/month, 30-day retention, no card required; Phoenix Cloud's AX Free tier: 25,000 spans/month, 15-day retention). The deciding factors were fit, not cost — Langfuse's session view groups every span under one `bandhu_sid` across a multi-turn conversation (a closer match to a chatbot than trace-by-trace), and its scores view maps directly onto stage 12's sampled Evaluator. Phoenix's dedicated retrieval-span rendering was the one place it had a real edge, but that's just a few structured attributes on the span either way (see the retrieval example below) — not worth losing the other two for. Full reasoning trail is in the conversation that produced this doc, kept here so a future re-evaluation isn't starting from scratch.
+
+**Setup**: Langfuse Cloud accepts standard OpenTelemetry traces over OTLP, so the same OpenInference `AnthropicInstrumentor` used for Phoenix works unchanged — only the exporter destination changes:
 
 ```python
-from phoenix.otel import register
+import base64
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from openinference.instrumentation.anthropic import AnthropicInstrumentor
 
-tracer_provider = register(project_name="bandhu", endpoint="http://localhost:6006/v1/traces")
+auth = base64.b64encode(
+    f"{settings.langfuse_public_key}:{settings.langfuse_secret_key}".encode()
+).decode()
+
+tracer_provider = TracerProvider()
+tracer_provider.add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter(
+        endpoint="https://cloud.langfuse.com/api/public/otel/v1/traces",
+        headers={"Authorization": f"Basic {auth}"},
+    ))
+)
 AnthropicInstrumentor().instrument(tracer_provider=tracer_provider)
 ```
 
-`AnthropicInstrumentor` wraps every call made through the `anthropic` SDK client automatically — once instrumented, every Claude call in Classify/Orchestrator/Generate/Summarizer/Evaluator shows up in Phoenix with prompt, response, token counts, and latency, with no manual span code needed at each call site. **Verify the exact import path and `register()` signature against Phoenix's current docs before implementing** — same caveat as everywhere else in this doc, package APIs move.
+`AnthropicInstrumentor` wraps every call made through the `anthropic` SDK client automatically — once instrumented, every Claude call in Classify/Orchestrator/Generate/Summarizer/Evaluator shows up in Langfuse with prompt, response, token counts, and latency, with no manual span code needed at each call site. **Verify the exact OTLP endpoint, region, and auth header format against Langfuse's current docs before implementing** — same caveat as everywhere else in this doc, package APIs and endpoints move.
 
 **What doesn't come free — needs a manual span**: Postgres queries and STT/TTS calls aren't LLM calls made through the `anthropic` SDK, so there's no auto-instrumentor covering them. Wrap each:
 
@@ -360,9 +383,25 @@ def transcribe(audio_bytes):
         return result
 ```
 
-Doing this for every non-LLM stage (Safety gate, Memory read, Eligibility gate, Memory write, STT, TTS) means a single trace in Phoenix shows the *entire* turn — not just the Claude calls in it, but what was retrieved, what the Orchestrator decided, and for a voice turn, exactly how long transcription and synthesis each took. That's the piece that actually lets you tell, later, whether a slow voice reply was Claude's fault or the STT/TTS provider's.
+The retrieval stage is the same pattern, with structured attributes standing in for Phoenix's dedicated retrieval panel:
 
-**Sampling**: the Sampled evaluator (stage 12, 5–10% of responses) is a separate concept from telemetry — Phoenix traces every request, the evaluator scores a sample of them against the MITI rubric. Don't conflate "we trace it" with "we score it"; tracing is observability (did this work correctly, technically), evaluation is quality (was this a *good* response). Both matter, for different questions.
+```python
+def retrieve(query_embedding, filters):
+    with tracer.start_as_current_span("retrieval") as span:
+        results = vector_search(query_embedding, filters)
+        span.set_attribute("retrieval.result_count", len(results))
+        span.set_attribute("retrieval.entry_keys", [r.entry_key for r in results])
+        span.set_attribute("retrieval.top_similarity", results[0].similarity if results else 0)
+        return results
+```
+
+Doing this for every non-LLM stage (Safety gate, Memory read, Eligibility gate, Retrieval, Memory write, STT, TTS) means a single trace in Langfuse shows the *entire* turn — not just the Claude calls in it, but what was retrieved, what the Orchestrator decided, and for a voice turn, exactly how long transcription and synthesis each took. That's the piece that actually lets you tell, later, whether a slow voice reply was Claude's fault or the STT/TTS provider's.
+
+**Content control — what actually leaves the server**: `AnthropicInstrumentor` captures full prompt and completion text by default, which for this app means raw conversation content by default going to a third-party cloud service. That's the wrong default for a mental-health check-in product. `TelemetryConfig` (in `app/config.py`, same pattern as `Settings`) splits what's logged into two tiers: metadata — stage name, latency, token counts, model, `session_id`, error info — always logs; raw message/prompt/retrieval-content fields are opt-in per field, off unless explicitly turned on. This needs to be enforced at the span-creation call sites (strip or redact the relevant attribute before `span.set_attribute` when the corresponding config flag is off), not just a note in this doc.
+
+**Open gap — `session_id` and retention**: Langfuse's 30-day retention window is longer than this project's own 14-day cleanup guarantee (`user_sessions` cascade-delete, §9). If `session_id` reaches Langfuse in any span, a person's data can outlive its promised deletion window by up to 16 days in that one system. Not resolved yet — options are hashing/truncating `session_id` before it's attached to a span (closes the gap, but breaks Langfuse's session-grouping view, which needs a stable literal id) or documenting this as an accepted exception. Tracked in §14.
+
+**Sampling**: the Sampled evaluator (stage 12, 5–10% of responses) is a separate concept from telemetry — tracing covers every request, the evaluator scores a sample of them against the MITI rubric. Don't conflate "we trace it" with "we score it"; tracing is observability (did this work correctly, technically), evaluation is quality (was this a *good* response). Both matter, for different questions.
 
 ---
 
@@ -372,6 +411,9 @@ Doing this for every non-LLM stage (Safety gate, Memory read, Eligibility gate, 
 backend/
   app/
     main.py                    # FastAPI app, middleware registration, router mounting
+    creations.py                # §12 — separate from pipeline/, its own write path
+    breathe.py                  # §13 — direct content query, bypasses pipeline/ entirely
+    listen.py                   # §13 — direct content query, bypasses pipeline/ entirely
     middleware/
       session.py                # §7 — cookie issuance/validation
       rate_limit.py              # §8 — slowapi config
@@ -398,12 +440,15 @@ backend/
       voyage.py
       stt.py                       # §5 — transcribe + discard, provider TBD
       tts.py                       # §5 — synthesize, provider TBD
+      storage.py                   # §12/§13 — Supabase Storage client, image creations + audio tracks
       db.py                       # SQLAlchemy session/engine setup — the one client that talks
                                     # to Supabase, for both content and user tables
     models/                       # SQLAlchemy table classes — mirrors vector-database.md §2
       user_sessions.py
       conversation_turns.py       # §2
       user_checkins.py
+      user_creations.py           # §12
+      audio_tracks.py              # §13
       user_memory_summary.py
       evaluator_scores.py
       redirect_templates.py
@@ -413,7 +458,7 @@ backend/
       cleanup.py                  # §9
       scheduler.py                 # APScheduler wiring for cleanup.py + summarizer.py
     telemetry/
-      phoenix_setup.py            # §10
+      langfuse_setup.py           # §10
   alembic/                        # migration history
   tests/
     pipeline/                     # one test module per stage — each stage is a plain function,
@@ -425,7 +470,52 @@ The thing worth internalizing from this layout as you build it: **every stage in
 
 ---
 
-## 12. Open items
+## 12. Creations — image and poem
+
+Not part of the check-in pipeline's 12 stages — this is a separate feature (the "Co-Create" screen) with its own write path, that later feeds *into* the pipeline via the Summarizer (stage 11, §4), the same way `user_checkins` does. **Music was originally in scope here too — corrected**: what `ux-flow.html` calls "Listen" turned out to be Bandhu-provided curated audio, not something the person creates, which is a different enough feature to move to its own section — see §13.
+
+**Two Home-screen buttons, one flow**: "Write Together" and "Poem" both lead here — they're two entry points into the same `user_creations` write path, not two separate features. No schema or backend implication, just worth knowing so nothing gets built twice.
+
+**Write path**: person creates something → normalize by type:
+- **Poem** — plain text, goes straight into `user_creations.text_content` (`vector-database.md` §2). No storage bucket involved.
+- **Image** — binary file, uploaded to a Supabase Storage bucket; `user_creations.storage_path` stores the path, not the file.
+- Either way, a `caption` gets written alongside it — a short description of what the thing is, not the thing itself.
+
+**Why a caption, not the raw content, is what Summarizer reads**: same principle as `conversation_turns` vs. `user_memory_summary` in §2 — the long-term narrative should carry an impression ("wrote something about feeling stuck this week"), never a replay of someone's actual creative work. This is also what keeps the Summarizer's Claude call cheap and bounded — a caption is a sentence, a poem or an image is not.
+
+**Retention**: same 14-day window as everything else — `user_creations.session_id` cascades from `user_sessions` (`vector-database.md` §2) like every other user table. No special lifecycle, per your call — this isn't treated as more permanent than a check-in.
+
+**Storage cleanup gap, worth naming**: the cleanup job (§10) deletes the `user_creations` *row* via cascade, but that doesn't automatically delete the *file* sitting in the Supabase Storage bucket — Postgres cascades don't reach into object storage. Left as an open item (§14) rather than solved here, since the fix (a small job that deletes orphaned storage objects, or a Supabase Storage lifecycle rule) is worth its own decision, not a guess bolted onto this section.
+
+**Still an open README-level question**: `ux-flow.html` itself flags Co-Create as "additive, scope risk — ship in v1, or wait for the core loop to be validated first." Schema and write path exist now per your explicit call to build them, but that doesn't resolve the underlying product question — worth a real decision before this reaches real users, not just an implementation.
+
+---
+
+## 13. Direct-entry features — Breathe and Listen
+
+Two more Home-screen buttons that, like Creations, sit outside the 12-stage check-in pipeline — but for a different reason: the person is asking for something directly, not sending a message that needs Classify/Safety-gate/Orchestrator judgment at all. Building these as pipeline stages would be modeling a decision nobody needs to make.
+
+### Breathe
+
+Tapping "Breathe" on Home requests a grounding/breathing exercise directly — no message, no mood tag, no Claude call needed, because the person already said what they want by tapping the button.
+
+- **Query**: same `content_entries` table Retrieval (§4 stage 6) already uses, filtered to `category = 'grounding-technique'`, no vector similarity involved since there's no message to embed — just a plain `WHERE` + a rotation so the same entry doesn't show every time (`ORDER BY random()` is fine at this corpus size; revisit only if the library grows large enough for it to matter).
+- **Logging**: still worth a lightweight `user_checkins` row (`theme = 'breathing'`, `is_help_offer = false` since the person asked rather than being offered) — this is what lets the Summarizer's "bigger picture" include "did a breathing exercise" the same way it would a Creation, which is the actual thing that prompted this section to exist.
+- **The real blocker, already logged and easy to lose track of**: `knowledge-base/OPEN_QUESTIONS.md` already flags that no breathing/relaxation script has been sourced — mhGAP explicitly doesn't cover this, and it points to a separate WHO manual ("Problem Management Plus") that hasn't been fetched. This backend path can be fully built and still have nothing real to serve until that content gap closes. Worth stating plainly so "the Breathe button works" doesn't get confused with "there's something good behind it."
+
+### Listen
+
+Tapping "Listen" requests curated audio — this is Bandhu offering something, not the person creating anything, which is why it's a different table (`audio_tracks`, `vector-database.md` §2) and a different flow from Creations, not a variant of it.
+
+- **Query**: filter `audio_tracks` by `mood_tags` against whatever mood context is available (the long-term summary or the most recent `user_checkins.mood_tag`, if there is one) — and a sensible default set if there isn't, since Listen is reachable with zero prior check-ins.
+- **No Claude call needed** for the basic version — this is a filtered lookup against a small curated table, same shape as `redirect_templates`.
+- **Not written into `user_creations`** — the person didn't make anything. Whether a "listened to X" fact is worth logging to `user_checkins` for Summarizer context is a smaller, genuinely open version of the same question Breathe answers yes to — flagged in §14, not decided.
+- **The real blocker**: nobody has sourced or licensed any actual tracks yet (`vector-database.md` §5) — same shape of gap as Breathe's missing content, just a rights/curation problem instead of a source-material one.
+- **Also an open README-level question**, same as Creations: `ux-flow.html` flags Listen as "additive, scope risk," not a confirmed v1 feature.
+
+---
+
+## 14. Open items
 
 - **STT and TTS providers are unresolved** (§1, §5) — needs evaluation against real Hindi/Hinglish audio before locking in, same posture as the embedding provider decision. Don't guess a specific model/API shape until that's done.
 - **Voice duration cap (60–90s, §5) is a starting guess**, not validated.
@@ -437,3 +527,11 @@ The thing worth internalizing from this layout as you build it: **every stage in
 - **Hybrid search (`vector-database.md` §3) is written but not wired in** — add it only if pure vector search is ever observed missing an exact-phrase match. Don't build it preemptively.
 - **No auth today, but `models/user_sessions.py` should stay additive-friendly** if that ever changes (`vector-database.md` §2 already notes this at the schema level) — worth keeping in mind while writing the session middleware too, so adding a login path later doesn't require rewriting how `session_id` is issued, just adding an optional `account_id` alongside it.
 - **`pipeline.html`'s "Safety gate needs conversation memory" finding is resolved by §2 above** — that doc's Open Items section has been updated to point here instead of describing it as unsolved.
+- **`user_creations.caption` — who writes it, isn't decided** (§12, also logged in `vector-database.md` §5). The person typing their own short description, versus a Claude call generating one automatically, are genuinely different builds — the second needs a Claude call in the creation write path that doesn't exist yet.
+- **Deleting a `user_creations` row doesn't delete its file from Supabase Storage** (§12) — the 14-day cascade only reaches Postgres rows. Needs either a small periodic job to clean up orphaned storage objects, or a Storage-level lifecycle rule, once one is chosen.
+- **No breathing/relaxation content exists yet** (§13) — the backend path can be fully built with nothing real behind it. Same content gap already logged in `knowledge-base/OPEN_QUESTIONS.md`, just easy to lose track of once the backend "works."
+- **No audio tracks sourced or licensed for Listen** (§13, `vector-database.md` §5) — a content/rights question, not a schema one.
+- **Whether a "listened to X" fact belongs in `user_checkins` for Summarizer context isn't decided** (§13) — smaller version of the same question Breathe already answers yes to.
+- **Co-Create and Listen are both still an open README-level product decision** (§12, §13, `docs/ux-flow.html`) — ship in v1, or wait for the core loop to validate first. Building the backend for both doesn't resolve this; it just means the decision is now the only thing blocking either from shipping.
+- **`session_id` in Langfuse spans outlives the 14-day cleanup guarantee** (§10) — Langfuse's 30-day retention means a person's `session_id` can exist there up to 16 days after its row is deleted from `user_sessions`. Not resolved: hash/truncate `session_id` before it's attached to a span (closes the gap, breaks Langfuse's session-grouping view) versus documenting this as an accepted exception.
+- **Retrieval cache (§4 stage 6) — deferred, not dropped.** `rag-components.html` (an earlier doc, predating the single-Supabase pivot) proposed a Redis/Upstash cache in front of `pgvector`, sized to "skip both the embedding call and the pgvector query" on a near-duplicate check-in. That combination doesn't actually hold: detecting a *near*-duplicate requires embedding the incoming message first to compare it, so a similarity-threshold cache can only skip the `pgvector` query, not the embedding call. Two different caches, if this is ever built: an **exact-text cache** (hash the raw message, skip embedding entirely on a literal repeat) and a **similarity cache** (skip only the `pgvector` query once the embedding already exists). Not worth building now — no traffic volume yet to justify another external service, same tradeoff already declined for Celery/Redis (§10, §9). Revisit once real Voyage embedding-call costs are visible.
