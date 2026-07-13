@@ -10,7 +10,13 @@ from app.config import settings
 
 # Import every model module so it registers its table on Base.metadata —
 # without this import, autogenerate would see an empty schema.
-from app.models import conversation_turns, safety_patterns, user_sessions  # noqa: F401
+from app.models import (  # noqa: F401
+    content_entries,
+    conversation_turns,
+    safety_patterns,
+    user_checkins,
+    user_sessions,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

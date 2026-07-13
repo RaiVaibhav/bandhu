@@ -213,10 +213,18 @@ CREATE TABLE user_checkins (
 CREATE INDEX user_checkins_recent_idx ON user_checkins (session_id, created_at DESC);
 
 -- The eligibility gate's rolling count (stage 5) is a query, not a stored counter —
--- avoids a second write path that could drift from the source-of-truth checkins:
+-- avoids a second write path that could drift from the source-of-truth checkins.
+-- "Last 3 check-ins" is by count, not a calendar window — the count has to run
+-- over a small, fixed-size slice of the most recent rows, so it's a subquery,
+-- not a plain WHERE (this resolves the open item that used to sit here, an
+-- `interval '3 checkins'` placeholder that was never valid SQL):
 --   SELECT count(*) FILTER (WHERE is_help_offer)
---   FROM user_checkins
---   WHERE session_id = $1 AND created_at > now() - interval '3 checkins'  -- see open item below
+--   FROM (
+--     SELECT is_help_offer FROM user_checkins
+--     WHERE session_id = $1
+--     ORDER BY created_at DESC
+--     LIMIT 3
+--   ) recent
 
 
 -- ============================================================
@@ -376,8 +384,8 @@ No automatic chunking algorithm needed. Per `VETTING.md`, every entry is already
 
 - **Embedding provider and dimension are placeholders.** `VECTOR(1024)` needs to become the real number once the exact Voyage (or alternative) model is confirmed against their current docs — this isn't a guess I should lock in.
 - **Hybrid search (§3) is written but not wired in** — add it only once pure vector search is observed missing something, per the reasoning above. Don't build it preemptively.
-- **Eligibility gate's "last 3 check-ins" window** — the query sketch in §2 uses a time-based comment placeholder; needs a real definition (last N check-ins by count, or a rolling calendar window) tied to the same open decision already flagged in `pipeline.html`'s open items (the proposed "1 in 3" cap isn't validated yet).
-- **`helplines.verified_at`** — the column exists, but the actual verification (calling each number, confirming hours) is the task from `knowledge-base/safety/helpline-directory.md` that still hasn't happened. The schema won't stop someone from inserting an unverified row; that's an application-level and process-level guarantee, not a database one.
+- **Eligibility gate's "last 3 check-ins" window — resolved as count-based**, not a calendar window (§2's query sketch, `app/pipeline/stages/eligibility_gate.py`). Still open: the "no more than 1 in the last 3" cap itself is a starting guess, not validated against real usage — same posture as the other unvalidated numbers in `backend-architecture.md` §14.
+- **`helplines.verified_at`** — Vandrevala, iCall, and KIRAN's numbers were dial-confirmed by the founder on 2026-07-13 (`knowledge-base/safety/helpline-directory.md`); `verified_at` should be set for those three rows once real data exists. Still open: none of their *hours* were confirmed (iCall's specifically, since it claims a limited window rather than 24x7), and the Childline/minors number remains fully unverified. The schema won't stop someone from inserting an unverified row regardless — that guarantee is still application-level and process-level, not a database one, so the ingestion/seed step needs to actually read this file's per-row verification status rather than assume the whole file is uniformly checked.
 - **Summarizer trigger** (stage 11) — same open item as `pipeline.html`: nightly batch vs. rolling recompute vs. on-demand isn't decided, which affects whether `user_memory_summary` gets updated by a cron job, a queue consumer, or inline during Memory write. See `docs/backend-architecture.md` for how this maps onto an actual process.
 - **`conversation_turns`' read-time window (2 hours / last 12 rows) is a starting guess**, not validated — see `backend-architecture.md` §2. Storage retention is already bounded (14-day cascade); this is purely about how much recent dialogue a single Claude call gets shown.
 - **High-risk knowledge-base files are `self-vetted`, not `professional-reviewed`, as of 2026-07-11** — the ingestion gate (§4) correctly blocks them from `redirect_templates`/`safety_patterns` until that changes; noting it here too so this doc doesn't read as if they're live.
