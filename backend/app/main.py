@@ -30,5 +30,6 @@ async def health():
         # confirm they're being picked up without printing a secret.
         "database_configured": settings.database_url is not None,
         "anthropic_configured": settings.anthropic_api_key is not None,
+        "voyage_configured": settings.voyage_api_key is not None,
         "telemetry_configured": settings.langfuse_public_key is not None,
     }
