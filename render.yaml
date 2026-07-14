@@ -26,4 +26,4 @@ services:
       - key: TELEMETRY_LOG_PROMPT_CONTENT
         value: "false"
       - key: CORS_ALLOW_ORIGINS
-        value: http://localhost:5173,http://localhost:4173 # replace with your deployed frontend's real origin(s) once it's live
+        value: http://localhost:5173,http://localhost:4173,https://bandhu-companion.netlify.app
