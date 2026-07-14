@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     langfuse_secret_key: str | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # Comma-separated allowed origins for CORSMiddleware. Defaults cover
+    # local dev (Vite on :5173, `vite preview` on :4173) — production sets
+    # this to the deployed frontend's real origin(s) via env var, since a
+    # credentialed cookie (bandhu_sid) can't pair with allow_origins=["*"].
+    cors_allow_origins: str = "http://localhost:5173,http://localhost:4173"
+
+    @property
+    def cors_allow_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
+
 
 class TelemetryConfig(BaseSettings):
     """Controls what actually leaves the server in a telemetry span, separate

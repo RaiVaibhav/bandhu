@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: bandhu-backend
+    runtime: python
+    rootDir: backend
+    region: singapore # closest Render region to the Supabase project (ap-southeast-2)
+    plan: free
+    buildCommand: "pip install uv && uv sync --frozen && uv run alembic upgrade head"
+    startCommand: "uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_HOST
+        value: https://cloud.langfuse.com
+      - key: TELEMETRY_LOG_MESSAGE_CONTENT
+        value: "false"
+      - key: TELEMETRY_LOG_RETRIEVAL_CONTENT
+        value: "false"
+      - key: TELEMETRY_LOG_PROMPT_CONTENT
+        value: "false"
+      - key: CORS_ALLOW_ORIGINS
+        value: http://localhost:5173,http://localhost:4173 # replace with your deployed frontend's real origin(s) once it's live

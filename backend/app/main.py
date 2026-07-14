@@ -55,7 +55,7 @@ app.add_middleware(SessionMiddleware)
 # cookie and browsers reject wildcard-origin + credentials together.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:4173"],
+    allow_origins=settings.cors_allow_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
