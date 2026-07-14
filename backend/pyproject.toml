@@ -6,16 +6,16 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.5",
-    "anthropic>=0.116.0",
     "apscheduler>=3.11.3",
     "fastapi>=0.139.0",
-    "openinference-instrumentation-anthropic>=1.0.6",
+    "openai>=2.45.0",
+    "openinference-instrumentation-openai>=0.1.52",
     "opentelemetry-exporter-otlp-proto-http>=1.43.0",
     "opentelemetry-sdk>=1.43.0",
     "pgvector>=0.5.0",
     "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.14.2",
+    "slowapi>=0.1.10",
     "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.51.0",
-    "voyageai>=0.5.0",
 ]

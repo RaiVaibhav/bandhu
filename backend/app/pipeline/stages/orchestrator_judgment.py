@@ -3,7 +3,7 @@ from typing import Literal
 from opentelemetry import trace
 from pydantic import BaseModel, ValidationError
 
-from app.clients.claude import ORCHESTRATOR_MODEL, generate
+from app.clients.llm import ORCHESTRATOR_MODEL, generate
 from app.config import telemetry_config
 from app.pipeline.stages.classify import ClassifyResult
 from app.pipeline.stages.retrieval import RetrievedChunk

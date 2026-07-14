@@ -511,9 +511,9 @@
         <p>Undefined: does the screen always show the same fixed set (like the current 8-item Stitch build), or a shortlist filtered by what Classify tagged? Single-select or can more than one be picked? Each answer changes what the re-entry Retrieval query looks like.</p>
       </div>
       <div class="finding">
-        <span class="sev decide">Decision needed</span>
-        <h4>Summarizer's trigger and window aren't defined yet</h4>
-        <p>"Periodic" is doing a lot of work in that description. Nightly batch? Rolling 7-day window recomputed on every write? On-demand only, the first time someone actually asks? This also decides the cold-start case — what "let's look" says on day one, before any pattern exists to summarize.</p>
+        <span class="sev decide">Resolved — see backend-architecture.md §4/§14</span>
+        <h4>Summarizer's trigger and window</h4>
+        <p>Implemented as a nightly APScheduler job (4am, one hour after cleanup) over each session's accumulated <code>user_checkins</code> facts since its own last run — see <code>app/pipeline/stages/summarizer.py</code>. The cold-start case (no prior summary) is handled: <code>summary_text</code> stays <code>None</code> until the first run produces one, and Generate/Orchestrator already treat that as "No prior context yet." The cadence itself (nightly vs. rolling vs. on-demand) is this doc's own stated default, not independently validated against real usage.</p>
       </div>
       <div class="finding">
         <span class="sev decide">Decision needed</span>

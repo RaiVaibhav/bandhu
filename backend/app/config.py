@@ -2,15 +2,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # extra="ignore" because TelemetryConfig below reads the same .env file
+    # for its own keys (TELEMETRY_LOG_*) — without this, pydantic-settings'
+    # default "forbid" behavior means any real .env file crashes the app on
+    # startup the moment it contains a key this class doesn't declare.
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Left optional for now — nothing in this milestone touches Supabase or
-    # Claude yet, so the app can start with an empty .env. Stages that need
-    # these will fail loudly and specifically once we build them, instead of
-    # this file guessing or hardcoding a fallback.
+    # NVIDIA NIM yet, so the app can start with an empty .env. Stages that
+    # need these will fail loudly and specifically once we build them,
+    # instead of this file guessing or hardcoding a fallback.
     database_url: str | None = None
-    anthropic_api_key: str | None = None
-    voyage_api_key: str | None = None
+    # NVIDIA NIM — free-tier, OpenAI-compatible access to hosted open
+    # models. Used for both generation (clients/llm.py) and embeddings
+    # (clients/embeddings.py) — one key, one provider, instead of a
+    # separate Anthropic key for generation and Voyage key for embeddings.
+    # See vector-database.md §1.
+    nvidia_api_key: str | None = None
 
     # Langfuse — telemetry. See docs/backend-architecture.md §10 for why
     # Langfuse over the originally-planned Phoenix, and the open item on
@@ -30,7 +38,9 @@ class TelemetryConfig(BaseSettings):
     not ship someone's message text to a third party unless that's a
     deliberate choice, not a forgotten default."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", env_prefix="telemetry_log_")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", env_prefix="telemetry_log_", extra="ignore"
+    )
 
     message_content: bool = False
     retrieval_content: bool = False

@@ -13,8 +13,12 @@ from app.config import settings
 from app.models import (  # noqa: F401
     content_entries,
     conversation_turns,
+    evaluator_scores,
+    helplines,
+    redirect_templates,
     safety_patterns,
     user_checkins,
+    user_memory_summary,
     user_sessions,
 )
 

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bandhu — Engineering Docs</title>
+<style>
+  :root{
+    --bg:#F6F4EF; --surface:#FFFFFF; --ink:#21231F; --muted:#6E7268; --border:#DEDACE;
+    --accent:#3E6B5E; --accent-soft:#E4ECE8; --amber:#A8672E; --amber-soft:#F3E7D6;
+    --violet:#5C5378; --violet-soft:#EBE8F2;
+    --shadow: 0 1px 2px rgba(33,35,31,0.06), 0 1px 1px rgba(33,35,31,0.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17181A; --surface:#1E201C; --ink:#EDEAE2; --muted:#9B9C8F; --border:#34362F;
+      --accent:#79AC9B; --accent-soft:#22322B; --amber:#D68A4C; --amber-soft:#392A18;
+      --violet:#B2A8D6; --violet-soft:#2A2638;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+  }
+
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; line-height:1.5; }
+  .wrap{ max-width:920px; margin:0 auto; padding: 56px 28px 96px; }
+  h1,h2{ font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-weight:600; text-wrap:balance; color:var(--ink); margin:0; }
+
+  header.top{ margin-bottom:40px; border-bottom:1px solid var(--border); padding-bottom:28px; }
+  header.top .eyebrow{ font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:10px; }
+  header.top h1{ font-size:34px; margin-bottom:12px; }
+  header.top p{ color:var(--muted); font-size:15px; max-width:66ch; margin:0; }
+
+  section{ margin-top:40px; }
+  section > h2{ font-size:15px; letter-spacing:0.04em; text-transform:uppercase; color:var(--muted); margin-bottom:16px; }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:16px; }
+
+  .card{
+    display:block; background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:20px 22px; box-shadow:var(--shadow); text-decoration:none; color:inherit;
+    transition:border-color 0.15s ease, transform 0.15s ease;
+  }
+  .card:hover{ border-color:var(--accent); transform:translateY(-1px); }
+  .card .tag{ display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; padding:2px 8px; border-radius:20px; margin-bottom:10px; }
+  .tag.core{ background:var(--accent-soft); color:var(--accent); }
+  .tag.support{ background:var(--violet-soft); color:var(--violet); }
+  .tag.historical{ background:var(--border); color:var(--muted); }
+  .card h3{ font-size:16px; margin:0 0 6px; font-family:inherit; font-weight:700; }
+  .card p{ margin:0; font-size:13.5px; color:var(--muted); line-height:1.5; }
+  .card .fmt{ display:block; margin-top:12px; font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  footer{ margin-top:64px; padding-top:20px; border-top:1px solid var(--border); font-size:12.5px; color:var(--muted); }
+  footer a{ color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow">Bandhu — Engineering Reference</div>
+    <h1>Engineering docs</h1>
+    <p>Bandhu is a companion-first mental health check-in app for India — solo project, FastAPI + Supabase/pgvector backend, built incrementally and documented as it goes. These are the working design docs, not marketing pages: each one says what to build and why, including the parts still undecided.</p>
+  </header>
+
+  <section>
+    <h2>Core design</h2>
+    <div class="grid">
+      <a class="card" href="pipeline.html">
+        <span class="tag core">Core</span>
+        <h3>Check-in Pipeline</h3>
+        <p>The 12-stage flow one check-in goes through — safety gate, classify, retrieval, the orchestrator's one real judgment call, guardrails. Silence is the default outcome, not a fallback.</p>
+        <span class="fmt">HTML</span>
+      </a>
+      <a class="card" href="backend-architecture.html">
+        <span class="tag core">Core</span>
+        <h3>Backend Architecture</h3>
+        <p>How memory works across two horizons, voice in/out, anonymous sessions, rate limiting, cleanup, and telemetry — the layer underneath the pipeline diagram.</p>
+        <span class="fmt">HTML · source: <a href="backend-architecture.md">backend-architecture.md</a></span>
+      </a>
+      <a class="card" href="vector-database.md">
+        <span class="tag core">Core</span>
+        <h3>Vector Database Design</h3>
+        <p>Actual Postgres/pgvector schema, retrieval queries, and the embedding/generation provider choices underneath both docs above.</p>
+        <span class="fmt">Markdown — renders best viewed on GitHub</span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Product context</h2>
+    <div class="grid">
+      <a class="card" href="ux-flow.html">
+        <span class="tag support">Product</span>
+        <h3>UX Journey</h3>
+        <p>The screen-by-screen flow this backend serves — Home, check-in, Thinking Trap, Crisis Support, Co-Create, and the rest.</p>
+        <span class="fmt">HTML</span>
+      </a>
+      <a class="card" href="rag-components.html">
+        <span class="tag historical">Superseded</span>
+        <h3>RAG Components</h3>
+        <p>An earlier design, predating the single-Supabase pivot — kept for history. Its retrieval-cache proposal has since been corrected in Backend Architecture's open items.</p>
+        <span class="fmt">HTML — historical</span>
+      </a>
+    </div>
+  </section>
+
+  <footer>
+    Backend and content-library docs live alongside this in <code>docs/</code> and <code>knowledge-base/</code>. See <a href="https://github.com/RaiVaibhav/bandhu">the repository</a> for source and progress.
+  </footer>
+
+</div>
+</body>
+</html>

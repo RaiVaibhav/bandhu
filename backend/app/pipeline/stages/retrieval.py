@@ -2,7 +2,7 @@ from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.voyage import embed_query
+from app.clients.embeddings import embed_query
 from app.config import telemetry_config
 from app.models.content_entries import ContentEntry
 from app.telemetry.langfuse_setup import traced

@@ -179,7 +179,7 @@
     <p>Companion to <em>docs/pipeline.html</em> (the 12-stage flow) and <em>docs/vector-database.md</em> (Supabase/Postgres + pgvector schema). This is the layer those don't cover: how memory works for a multi-turn chat, how voice fits in, what process runs the pipeline, how an anonymous browser becomes an identity, what stops abuse, and how you'd see what happened after the fact.</p>
     <div class="legend">
       <div class="legend-item"><span class="swatch" style="background:var(--violet)"></span>Supabase (Postgres + pgvector)</div>
-      <div class="legend-item"><span class="swatch" style="background:var(--amber)"></span>Claude</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--amber)"></span>NVIDIA NIM (LLM)</div>
       <div class="legend-item"><span class="swatch" style="background:var(--blue)"></span>STT / TTS</div>
       <div class="legend-item"><span class="swatch" style="background:var(--border)"></span>In-process logic</div>
       <div class="legend-item"><span class="swatch" style="border:1px dashed var(--muted); background:transparent"></span>Async / background</div>
@@ -200,8 +200,8 @@
           <tr><td class="k">Database</td><td>Supabase (PostgreSQL + <code>pgvector</code>)</td><td>One database, content and user data both. Free tier, no separate vector-database service. Also holds the conversation buffer (§2). See <em>vector-database.md</em> §1.</td></tr>
           <tr><td class="k">Object storage</td><td>Supabase Storage</td><td>S3-compatible, same free project — holds image creations (§12) and curated Listen audio (§13). Poems are plain text and skip this.</td></tr>
           <tr><td class="k">ORM / migrations</td><td>SQLAlchemy + Alembic</td><td>Table defs as Python classes; schema changes become reviewable migrations.</td></tr>
-          <tr><td class="k">Embeddings</td><td>Voyage AI</td><td>Anthropic has no embeddings API.</td></tr>
-          <tr><td class="k">Generation</td><td>Claude (official <code>anthropic</code> SDK)</td><td>Per the model-tier table in <em>vector-database.md</em> §1.</td></tr>
+          <tr><td class="k">Embeddings</td><td>NVIDIA NIM (<code>nvidia/llama-nemotron-embed-1b-v2</code>)</td><td>Originally Voyage AI, moved to the same NVIDIA NIM account already used for generation — one provider, one key, instead of two.</td></tr>
+          <tr><td class="k">Generation</td><td>NVIDIA NIM (<code>openai</code> SDK, custom <code>base_url</code>)</td><td>Free-tier, OpenAI-compatible access to hosted open models (Qwen3.5/Qwen3-Next and DeepSeek V4, per what's actually available on this account) — switched from Anthropic Claude since no paid Anthropic key is available. Per the model-tier table in <em>vector-database.md</em> §1.</td></tr>
           <tr><td class="k">Speech-to-text</td><td>Not locked <span class="badge-tbd">TBD</span></td><td>Needs strong Hindi/Hinglish accuracy. Candidates: OpenAI Whisper, Sarvam AI / Bhashini (India-first). See §5.</td></tr>
           <tr><td class="k">Text-to-speech</td><td>Not locked <span class="badge-tbd">TBD</span></td><td>Same language bar, plus voice warmth matters for a companion. Candidates: ElevenLabs, Sarvam AI. See §5.</td></tr>
           <tr><td class="k">Rate limiting</td><td><code>slowapi</code></td><td>In-memory backend is enough for one instance — see §8.</td></tr>
@@ -228,7 +228,7 @@
           <dt>Content</dt><dd>Raw text, verbatim (transcribed, if voice — §5)</dd>
           <dt>Written</dt><dd>Every turn (stage 10)</dd>
           <dt>Read by</dt><dd>Safety gate (2), Orchestrator (7), Generate (8)</dd>
-          <dt>Feeds Claude as</dt><dd>The <code>messages</code> array</dd>
+          <dt>Feeds the LLM as</dt><dd>The <code>messages</code> array</dd>
           <dt>Never does</dt><dd>Get summarized, or shown to the person as a recap</dd>
         </dl>
       </div>
@@ -241,7 +241,7 @@
           <dt>Content</dt><dd>Synthesized facts, never a direct quote</dd>
           <dt>Written</dt><dd>Periodically, async (stage 11)</dd>
           <dt>Read by</dt><dd>Orchestrator (7), via Memory read (4)</dd>
-          <dt>Feeds Claude as</dt><dd>A block inside the <code>system</code> prompt</dd>
+          <dt>Feeds the LLM as</dt><dd>A block inside the <code>system</code> prompt</dd>
           <dt>Never does</dt><dd>Contain a verbatim quote presented as if just said</dd>
         </dl>
       </div>
@@ -360,7 +360,7 @@ ORDER BY created_at ASC;</code></pre>
       <div class="sd-head"><span class="sd-num">3</span><h3>Classify</h3><span class="sd-short">not the buffer — this message only</span></div>
       <div class="sd-plain"><b>In plain terms</b>A quick read on the emotional tone of just this message — sad, anxious, stressed. Also catches a few danger zones ("do I have depression," "what medication should I take") and routes those to a pre-written, careful redirect instead of letting anything improvise an answer.</div>
       <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Normalized message only</div></div>
-      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude fast-tier call → emotion/category/intensity tags, or a special-case flag (medical doubt, disorder, medication question).</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">a small-tier LLM call → emotion/category/intensity tags, or a special-case flag (medical doubt, disorder, medication question).</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>tags{}</code> or <code>special_case</code> — special case short-circuits to the fixed redirect branch.</div></div>
       <div class="sd-row"><div class="sd-label">Low-confidence path</div><div class="sd-val">Resolves <em>pipeline.html</em>'s "needs an explicit low-confidence path" open item. A genuinely ambiguous message ("idk", a bare emoji) or a malformed/out-of-schema model response both resolve to <code>confidence: "low"</code> with every tag <code>null</code> — never force-fit onto the nearest category. See <code>app/pipeline/stages/classify.py</code>.</div></div>
     </div>
@@ -394,7 +394,7 @@ ORDER BY created_at ASC;</code></pre>
       <div class="sd-head"><span class="sd-num">7</span><h3>Orchestrator (judgment)</h3></div>
       <div class="sd-plain" style="background:var(--surface);"><b>In plain terms</b>The one real decision in the whole flow. Everything gathered so far goes here, and it decides: acknowledge and stop, gently offer something, point out a thinking pattern, or just stay quiet. Quiet is the default — something has to earn its way into the reply.</div>
       <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Message, tags, <code>{summary_text, recent_turns[]}</code>, <code>eligible_for_offer</code>, <code>retrieved_chunks[]</code></div></div>
-      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude Opus-tier — the one real-discretion call. Decides close_the_loop / offer_suggestion / notice_thinking_trap / silence (default). Needs <code>recent_turns</code> specifically to avoid repeating an offer made two messages ago.</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">The largest-tier LLM call — the one real-discretion call. Decides close_the_loop / offer_suggestion / notice_thinking_trap / silence (default). Needs <code>recent_turns</code> specifically to avoid repeating an offer made two messages ago.</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>directive{tool, target_or_none}</code></div></div>
     </div>
 
@@ -402,7 +402,7 @@ ORDER BY created_at ASC;</code></pre>
       <div class="sd-head"><span class="sd-num">8</span><h3>Generate</h3><span class="sd-short">see §6 — always outputs text</span></div>
       <div class="sd-plain"><b>In plain terms</b>Write the actual reply. Doesn't decide anything new — just phrases whatever stage 7 decided into a short, warm sentence or two, using only what it was handed.</div>
       <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val"><code>directive</code> + its target content + <code>recent_turns</code> + current message</div></div>
-      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude fast-tier, phrasing only, ~60-word cap, constrained to what's handed to it. Doesn't think about output modality — voice synthesis happens later, in stage 10.</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">A small-tier LLM call, phrasing only, ~60-word cap, constrained to what's handed to it. Doesn't think about output modality — voice synthesis happens later, in stage 10.</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>response_text</code></div></div>
     </div>
 
@@ -426,7 +426,7 @@ ORDER BY created_at ASC;</code></pre>
       <div class="sd-head"><span class="sd-num">11</span><h3>Summarizer</h3><span class="sd-short">async · periodic</span></div>
       <div class="sd-plain"><b>In plain terms</b>Every so often, not every turn, take stock — look back at recent facts (and anything created, §12) and rewrite the longer-term summary in a few sentences, so a later conversation still feels like it remembers an earlier one, without ever storing or repeating exact quotes.</div>
       <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">Accumulated <code>user_checkins</code> facts since last run, plus any <code>user_creations.caption</code> rows in the window (§12)</div></div>
-      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude mid-tier, synthesizes a few-sentence narrative. <b>Does not</b> read <code>conversation_turns</code>, a full poem, or a stored file — facts and short captions only, never raw dialogue or the creative work itself.</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">A mid-tier LLM call, synthesizes a few-sentence narrative. <b>Does not</b> read <code>conversation_turns</code>, a full poem, or a stored file — facts and short captions only, never raw dialogue or the creative work itself.</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val">Updates <code>user_memory_summary</code></div></div>
     </div>
 
@@ -434,7 +434,7 @@ ORDER BY created_at ASC;</code></pre>
       <div class="sd-head"><span class="sd-num">12</span><h3>Sampled evaluator</h3><span class="sd-short">async · 5–10% of turns</span></div>
       <div class="sd-plain"><b>In plain terms</b>Spot-check quality — on a small slice of replies, separate from the live conversation, grade the reply against a coaching-conversation rubric, purely so tone can be checked over time. Never affects what the person actually sees.</div>
       <div class="sd-row"><div class="sd-label">Input</div><div class="sd-val">A sampled turn's <code>response_text</code> + its context</div></div>
-      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">Claude Opus-tier, scores against the MITI rubric.</div></div>
+      <div class="sd-row"><div class="sd-label">Logic</div><div class="sd-val">The largest-tier LLM call, scores against the MITI rubric.</div></div>
       <div class="sd-row"><div class="sd-label">Output</div><div class="sd-val"><code>evaluator_scores</code> row</div></div>
     </div>
   </section>
@@ -483,7 +483,7 @@ ORDER BY created_at ASC;</code></pre>
       </div>
       <div class="principle">
         <b>Latency — named, not solved here</b>
-        <p>A voice turn now pays STT time, the same two Claude calls a text turn pays, then TTS time — a longer, more latency-sensitive round-trip than typing. Two real options, neither committed to: accept the added latency for v1, or stream TTS as text is generated (meaningfully more complex). See open items.</p>
+        <p>A voice turn now pays STT time, the same two LLM calls a text turn pays, then TTS time — a longer, more latency-sensitive round-trip than typing. Two real options, neither committed to: accept the added latency for v1, or stream TTS as text is generated (meaningfully more complex). See open items.</p>
       </div>
     </div>
   </section>
@@ -491,12 +491,12 @@ ORDER BY created_at ASC;</code></pre>
   <section>
     <div class="section-head">
       <h2>6. The Generate call, concretely</h2>
-      <p>Where the two memory horizons actually meet the Claude API — unaffected by voice (§5): by the time Generate runs, the turn is already plain text either way.</p>
+      <p>Where the two memory horizons actually meet the LLM API — unaffected by voice (§5): by the time Generate runs, the turn is already plain text either way.</p>
     </div>
     <div class="code-block">
       <pre class="code"><code># recent_turns is stage 4's output, oldest first
-messages = [{"role": t.role, "content": t.content} for t in recent_turns]
-messages.append({"role": "user", "content": current_message.text})
+messages = [{"role": t["role"], "content": t["content"]} for t in recent_turns]
+messages.append({"role": "user", "content": message_text})
 
 system_prompt = f"""{BANDHU_PERSONA_AND_CONSTRAINTS}
 
@@ -504,20 +504,23 @@ Rolling context on this person — for your own awareness only, never to be
 recited back to them:
 {summary_text or "No prior context yet."}
 
-{directive.as_prompt_block()}
-# e.g. "Offer this, once, warmly, only if it fits naturally: &lt;retrieved_chunk.text&gt;"
+{_directive_instruction(directive, retrieved_chunks)}
+# e.g. "Offer this, once, warmly, only if it fits naturally: &lt;chunk text&gt;"
 """
 
-response = client.messages.create(
-    model=GENERATE_MODEL,      # fast tier — vector-database.md §1
-    max_tokens=150,
+response_text = await generate(
+    model=GENERATE_MODEL,      # small tier — vector-database.md §1
     system=system_prompt,
     messages=messages,
+    max_tokens=150,
 )</code></pre>
+    </div>
+    <div class="principle" style="margin-top:12px; max-width:none;">
+      <p>This is <code>clients/llm.py</code>'s <code>generate()</code> — its own <code>system</code> parameter, kept structurally separate at the function boundary, even though NVIDIA NIM's underlying API (OpenAI-shaped, unlike Anthropic's) has no genuinely separate top-level <code>system</code> slot; <code>generate()</code> assembles it as the first message with <code>role: "system"</code> before the call goes out.</p>
     </div>
     <div class="principle accent" style="margin-top:16px; max-width:none;">
       <b>Why the split matters, not just how it's coded</b>
-      <p>The long-term summary and the Orchestrator's directive go into <code>system</code> — Claude knows them, but they can never literally appear as a chat bubble, since they're not in <code>messages</code>. Only the real back-and-forth goes into <code>messages</code>. This makes "never a data recap" structurally true, not a prompt instruction Claude could drift from — the summary physically cannot come out sounding like "Last Tuesday you said X," because it was never written into the transcript as if anyone said it.</p>
+      <p>The long-term summary and the Orchestrator's directive go into <code>system</code> — the model knows them, but they can never literally appear as a chat bubble, since the <code>system</code> role is structurally distinct from <code>user</code>/<code>assistant</code>, not just positioned differently. Only the real back-and-forth goes in as <code>user</code>/<code>assistant</code> turns. This makes "never a data recap" structurally true, not a prompt instruction the model could drift from — the summary physically cannot come out sounding like "Last Tuesday you said X," because it was never written into the transcript as if anyone said it.</p>
     </div>
   </section>
 
@@ -559,7 +562,7 @@ response = client.messages.create(
       <div class="card">
         <div class="label">Layer 1</div>
         <h3>Per-session — 20 / 10 min</h3>
-        <p>Stops one runaway client from burning spend. A voice turn now costs STT + 2 Claude calls + TTS, not just 2 Claude calls.</p>
+        <p>Stops one runaway client from burning spend. A voice turn now costs STT + 2 LLM calls + TTS, not just 2 LLM calls. Also the backstop against NVIDIA NIM's own 40 req/min free-tier ceiling — this needs to stay comfortably under that, not just under whatever felt reasonable in isolation.</p>
       </div>
       <div class="card">
         <div class="label">Layer 2</div>
@@ -625,12 +628,12 @@ async def message(...): ...</code></pre>
       <p>Both are free at this project's scale (Langfuse Hobby: 50,000 units/month, 30-day retention; Phoenix AX Free: 25,000 spans/month, 15-day retention). The deciding factors were fit, not cost — Langfuse's session view groups every span under one <code>bandhu_sid</code> across a multi-turn conversation, and its scores view maps directly onto stage 12's sampled Evaluator. Phoenix's dedicated retrieval-span rendering was a real edge, but that's just a few structured attributes either way — not worth losing the other two for.</p>
     </div>
     <div class="code-block">
-      <div class="code-label">Setup — same AnthropicInstrumentor, exporter now points at Langfuse's OTLP endpoint</div>
+      <div class="code-label">Setup — OpenAIInstrumentor, since clients/llm.py calls NVIDIA NIM through the openai SDK</div>
       <pre class="code"><code>import base64
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from openinference.instrumentation.anthropic import AnthropicInstrumentor
+from openinference.instrumentation.openai import OpenAIInstrumentor
 
 auth = base64.b64encode(
     f"{settings.langfuse_public_key}:{settings.langfuse_secret_key}".encode()
@@ -643,7 +646,10 @@ tracer_provider.add_span_processor(
         headers={"Authorization": f"Basic {auth}"},
     ))
 )
-AnthropicInstrumentor().instrument(tracer_provider=tracer_provider)</code></pre>
+OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)</code></pre>
+    </div>
+    <div class="principle" style="margin-top:12px; max-width:none;">
+      <p>Originally planned as Anthropic's <code>AnthropicInstrumentor</code>, written against the <code>anthropic</code> SDK client. Switched to OpenInference's OpenAI instrumentor since NVIDIA NIM is accessed through the <code>openai</code> SDK — it patches the <code>openai</code> package itself, so it auto-traces NIM calls the same way it would trace OpenAI's own API.</p>
     </div>
     <div class="code-block">
       <div class="code-label">Postgres / STT / TTS all need a manual span</div>
@@ -669,7 +675,7 @@ def transcribe(audio_bytes):
     </div>
     <div class="principle" style="margin-top:16px; max-width:none;">
       <b>Content control — what actually leaves the server</b>
-      <p><code>AnthropicInstrumentor</code> captures full prompt/completion text by default — the wrong default for a mental-health check-in product. <code>TelemetryConfig</code> (in <code>app/config.py</code>) splits logging into two tiers: metadata (stage, latency, tokens, model, <code>session_id</code>, errors) always logs; raw message/prompt/retrieval-content fields are opt-in per field, off unless explicitly turned on — enforced at each span-creation call site, not just noted here.</p>
+      <p><code>OpenAIInstrumentor</code> captures full prompt/completion text by default — the wrong default for a mental-health check-in product. <code>TelemetryConfig</code> (in <code>app/config.py</code>) splits logging into two tiers: metadata (stage, latency, tokens, model, <code>session_id</code>, errors) always logs; raw message/prompt/retrieval-content fields are opt-in per field, off unless explicitly turned on — enforced at each span-creation call site, not just noted here.</p>
     </div>
     <div class="principle crisis" style="margin-top:16px; max-width:none;">
       <b>Open gap — session_id outlives the 14-day cleanup guarantee</b>
@@ -677,7 +683,7 @@ def transcribe(audio_bytes):
     </div>
     <div class="principle" style="margin-top:16px; max-width:none;">
       <b>Tracing ≠ evaluation</b>
-      <p>Langfuse traces every turn — did this work correctly, technically, including exactly how long STT/TTS took on a voice turn versus the Claude calls. The Sampled evaluator scores 5–10% against the MITI rubric — was this a <em>good</em> response. Both matter, for different questions.</p>
+      <p>Langfuse traces every turn — did this work correctly, technically, including exactly how long STT/TTS took on a voice turn versus the LLM calls. The Sampled evaluator scores 5–10% against the MITI rubric — was this a <em>good</em> response. Both matter, for different questions.</p>
     </div>
   </section>
 
@@ -711,8 +717,8 @@ def transcribe(audio_bytes):
       summarizer.py                 # stage 11, async
       evaluator.py                  # stage 12, async, sampled
     clients/
-      claude.py                     # model-tier config lives here
-      voyage.py
+      llm.py                         # openai SDK wrapper (NVIDIA NIM), model-tier config lives here
+      embeddings.py                  # also NVIDIA NIM — same account/key as llm.py
       stt.py                         # §5 — transcribe + discard, provider TBD
       tts.py                         # §5 — synthesize, provider TBD
       storage.py                     # §12/§13 — Supabase Storage client, image creations + audio tracks
@@ -762,7 +768,7 @@ def transcribe(audio_bytes):
 
     <div class="principle accent" style="margin-top:20px; max-width:none;">
       <b>Why a caption, not the raw content, is what the Summarizer reads</b>
-      <p>Same principle as <code>conversation_turns</code> vs. <code>user_memory_summary</code> in §2 — the long-term narrative carries an impression ("wrote something about feeling stuck this week"), never a replay of someone's actual creative work. It's also what keeps the Summarizer's Claude call cheap and bounded — a caption is a sentence; a poem or an image is not.</p>
+      <p>Same principle as <code>conversation_turns</code> vs. <code>user_memory_summary</code> in §2 — the long-term narrative carries an impression ("wrote something about feeling stuck this week"), never a replay of someone's actual creative work. It's also what keeps the Summarizer's LLM call cheap and bounded — a caption is a sentence; a poem or an image is not.</p>
     </div>
 
     <div class="principles" style="margin-top:16px;">
@@ -797,7 +803,7 @@ def transcribe(audio_bytes):
       <div class="card">
         <div class="label">Listen</div>
         <h3>Direct audio_tracks query</h3>
-        <p>Filters <code>audio_tracks</code> (<em>vector-database.md</em> §2) by mood tag, with a sensible default when there's no prior context. No Claude call needed — a filtered lookup against a small curated table, same shape as <code>redirect_templates</code>.</p>
+        <p>Filters <code>audio_tracks</code> (<em>vector-database.md</em> §2) by mood tag, with a sensible default when there's no prior context. No LLM call needed — a filtered lookup against a small curated table, same shape as <code>redirect_templates</code>.</p>
       </div>
     </div>
 
@@ -858,7 +864,7 @@ def transcribe(audio_bytes):
       <div class="finding">
         <span class="sev decide">Decision needed</span>
         <h4><code>user_creations.caption</code> — who writes it?</h4>
-        <p>The person typing their own short description vs. a Claude call generating one automatically (§12) are genuinely different builds — the second needs a new Claude call in the creation write path.</p>
+        <p>The person typing their own short description vs. an LLM call generating one automatically (§12) are genuinely different builds — the second needs a new LLM call in the creation write path.</p>
       </div>
       <div class="finding">
         <span class="sev decide">Decision needed</span>
@@ -888,7 +894,17 @@ def transcribe(audio_bytes):
       <div class="finding">
         <span class="sev done">Deferred, not dropped</span>
         <h4>Retrieval cache (§4 stage 6)</h4>
-        <p><em>rag-components.html</em> (predates the single-Supabase pivot) proposed a Redis/Upstash cache sized to skip both the embedding call and the <code>pgvector</code> query on a near-duplicate check-in — that combination doesn't actually hold, since detecting a near-duplicate requires embedding the message first. Corrected design if ever built: an <b>exact-text cache</b> (hash the raw message, skips embedding on a literal repeat) and a separate <b>similarity cache</b> (skips only the <code>pgvector</code> query once the embedding exists). Not worth building now — no traffic volume yet, same tradeoff already declined for Celery/Redis. Revisit once real Voyage embedding-call costs are visible.</p>
+        <p><em>rag-components.html</em> (predates the single-Supabase pivot) proposed a Redis/Upstash cache sized to skip both the embedding call and the <code>pgvector</code> query on a near-duplicate check-in — that combination doesn't actually hold, since detecting a near-duplicate requires embedding the message first. Corrected design if ever built: an <b>exact-text cache</b> (hash the raw message, skips embedding on a literal repeat) and a separate <b>similarity cache</b> (skips only the <code>pgvector</code> query once the embedding exists). Not worth building now — no traffic volume yet, same tradeoff already declined for Celery/Redis. Revisit once real embedding-call volume is visible — embeddings moved to NVIDIA NIM (free tier, rate-limited) rather than a paid Voyage account, so the pressure here is request volume against the 40 req/min ceiling, not per-call cost.</p>
+      </div>
+      <div class="finding">
+        <span class="sev verify">Verify against docs</span>
+        <h4>NVIDIA NIM's judgment quality on the Orchestrator (stage 7) is unevaluated</h4>
+        <p>The largest available NIM model was picked on the same "reserve the best model for judgment" principle used for Claude (§1, <em>vector-database.md</em> §1), but that principle doesn't guarantee equivalent quality across providers. Worth a real comparison once stage 12's sampled Evaluator has produced enough scores to judge by.</p>
+      </div>
+      <div class="finding">
+        <span class="sev decide">Decision needed</span>
+        <h4>NIM's 40 req/min free-tier limit isn't reconciled against slowapi's own limits</h4>
+        <p>Flagged in §8 too, restated here since it's a genuine gap: a burst of real traffic could hit NVIDIA's ceiling before the app's own limiter kicks in, surfacing as a generic upstream failure instead of the app's own rate-limit response. Needs either a lower app-side limit or backoff handling on NIM's 429s — not decided yet.</p>
       </div>
     </div>
   </section>

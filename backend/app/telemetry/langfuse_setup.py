@@ -40,13 +40,17 @@ def setup_telemetry() -> None:
     trace.set_tracer_provider(provider)
 
     try:
-        from openinference.instrumentation.anthropic import AnthropicInstrumentor
+        from openinference.instrumentation.openai import OpenAIInstrumentor
 
-        AnthropicInstrumentor().instrument(tracer_provider=provider)
+        # Patches the openai SDK client library itself, not a specific
+        # provider's endpoint — this auto-traces clients/llm.py's calls to
+        # NVIDIA NIM the same way it would trace calls to OpenAI directly,
+        # since NVIDIA NIM is accessed through the openai package.
+        OpenAIInstrumentor().instrument(tracer_provider=provider)
     except ImportError:
-        # clients/claude.py doesn't exist yet — nothing to auto-instrument.
+        # openai SDK not installed — nothing to auto-instrument yet.
         # Manual spans (session middleware, db, etc.) still export fine.
-        logger.info("anthropic SDK not installed — Claude auto-instrumentation skipped.")
+        logger.info("openai SDK not installed — LLM auto-instrumentation skipped.")
 
     logger.info("Langfuse telemetry configured (%s).", settings.langfuse_host)
 

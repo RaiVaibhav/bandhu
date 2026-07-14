@@ -3,7 +3,7 @@ from typing import Literal
 from opentelemetry import trace
 from pydantic import BaseModel, ValidationError
 
-from app.clients.claude import CLASSIFY_MODEL, generate
+from app.clients.llm import CLASSIFY_MODEL, generate
 from app.config import telemetry_config
 from app.telemetry.langfuse_setup import traced
 
