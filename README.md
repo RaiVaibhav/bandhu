@@ -1,4 +1,4 @@
-# Bandhu
+# [Bandhu](https://bandhu-companion.netlify.app/)
 
 A companion-first mental health check-in app for India — texting a friend, not opening a treatment tool.
 
