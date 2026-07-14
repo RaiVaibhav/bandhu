@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f9f9f7" />
+    <title>Bandhu — Privacy Policy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module" src="/src/privacy/main.ts"></script>
+  </head>
+  <body class="min-h-svh bg-background px-edge-mobile py-stack-lg">
+    <div class="mx-auto flex max-w-lg flex-col gap-stack-md pb-stack-lg">
+      <a href="/" class="text-sm text-muted-foreground underline">&larr; Back</a>
+
+      <div class="flex flex-col gap-1">
+        <h1 class="font-heading text-2xl font-semibold text-foreground">Privacy Policy</h1>
+        <p class="text-xs text-muted-foreground">
+          Draft — last updated 2026-07-14. Written by Bandhu's founder, not yet reviewed by a lawyer. Treat
+          this as an honest, current description of what the app actually does, not a finished legal
+          document.
+        </p>
+      </div>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">The short version</h2>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          Bandhu doesn't ask for your name, email, or a sign-up. Everything is tied to an anonymous
+          identifier stored in a cookie on your device — not to you personally. What you share is kept for
+          14 days of inactivity and then automatically deleted. Bandhu is a companion, not a treatment
+          tool, and is not monitored by a mental health professional in real time.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">What we collect</h2>
+        <ul class="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
+          <li>
+            <strong class="text-foreground">An anonymous session ID</strong> (a random code, not your
+            identity), set as a cookie the first time you use the app.
+          </li>
+          <li>
+            <strong class="text-foreground">What you type or say</strong> during a check-in, and Bandhu's
+            replies — stored against that session ID, not against you by name.
+          </li>
+          <li>
+            <strong class="text-foreground">Simple check-in facts</strong> — a mood tag, a theme, whether
+            something was offered and whether you said it helped.
+          </li>
+          <li>
+            <strong class="text-foreground">A short rolling summary</strong> of how you've been doing over
+            time, written by the app itself in plain sentences — never a copy of what you actually said.
+          </li>
+        </ul>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          We do not ask for or store your name, email, phone number, or any account credentials. There is
+          no login.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">How long we keep it</h2>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          14 days from your last visit — not 14 days from your first visit. If you come back before then,
+          the clock resets; if you don't, everything tied to your session is automatically and permanently
+          deleted, with nothing left over to clean up by hand.
+        </p>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          There isn't yet a button to delete your data immediately, on demand — right now, automatic
+          deletion after 14 days of inactivity is the only mechanism. That's a real gap, not a design
+          choice, and it's on the list to fix.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">Who else sees this</h2>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          Bandhu is one person's project, built on top of a few outside services that process data on our
+          behalf — none of them can identify you by name, because we never give them one:
+        </p>
+        <ul class="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
+          <li>
+            <strong class="text-foreground">NVIDIA NIM</strong> — generates Bandhu's replies and processes
+            your message text to do so.
+          </li>
+          <li>
+            <strong class="text-foreground">Supabase</strong> — hosts the database everything above is
+            stored in.
+          </li>
+          <li>
+            <strong class="text-foreground">Langfuse</strong> — helps us see whether the app is working
+            correctly (errors, response times). The raw text of your messages is <em>not</em> sent here by
+            default; only technical metadata (timing, which step ran, whether it errored) is, unless we've
+            deliberately turned raw-content logging on for debugging.
+          </li>
+        </ul>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          We don't sell data, and we don't use it for advertising. There's no ad network integrated into
+          this app.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">Crisis situations</h2>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          If something you write matches language associated with real risk of harm, Bandhu will show you
+          real, dial-confirmed helpline numbers (in India) instead of continuing the conversation normally.
+          This is an automated pattern match, not a professional monitoring your messages — Bandhu cannot
+          call anyone on your behalf, and no human reviews your messages in real time.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">Age</h2>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          Bandhu asks you to confirm you're 13 or older before using it. This is a self-declaration — we
+          don't verify age, and there's no ID check. We also don't yet have a distinct safety mode for
+          younger users (a separate crisis-resource list, stricter limits) — that's a genuinely open
+          decision in how this app is built, not something already handled behind the scenes. If you're
+          under 18, it's worth a parent or guardian knowing you're using this.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">Not a substitute for care</h2>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          Bandhu is a companion for everyday check-ins, not a diagnostic tool, not therapy, and not a
+          replacement for a mental health professional. Nothing it says should be read as a diagnosis or
+          medical advice.
+        </p>
+      </section>
+
+      <section class="flex flex-col gap-2">
+        <h2 class="font-heading text-base font-semibold text-foreground">Questions</h2>
+        <p class="text-sm leading-relaxed text-muted-foreground">
+          Reach out at
+          <a href="mailto:raivaibhav08@gmail.com" class="text-foreground underline">raivaibhav08@gmail.com</a>.
+        </p>
+      </section>
+    </div>
+  </body>
+</html>

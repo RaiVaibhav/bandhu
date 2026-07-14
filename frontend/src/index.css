@@ -1,0 +1,171 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Bandhu design tokens — ported 1:1 from the Stitch prototype's own
+   Material-3-style token set (docs/ux-flow.html screens), not
+   approximated. See frontend/DESIGN_SYSTEM.md for the extraction notes. */
+:root {
+  --radius: 0.75rem;
+
+  --background: #f9f9f7;
+  --foreground: #1a1c1b;
+
+  --card: #ffffff;
+  --card-foreground: #1a1c1b;
+
+  --popover: #ffffff;
+  --popover-foreground: #1a1c1b;
+
+  --primary: #42655b;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f0e0cc;
+  --secondary-foreground: #6e6353;
+
+  --muted: #eeeeec;
+  --muted-foreground: #414845;
+
+  --accent: #e8f3f0;
+  --accent-foreground: #2a4d43;
+
+  --tertiary: #655975;
+  --tertiary-foreground: #ffffff;
+  --tertiary-container: #ecdcfd;
+  --tertiary-container-foreground: #312840;
+
+  --destructive: #ba1a1a;
+  --destructive-foreground: #ffffff;
+
+  --border: #c1c8c4;
+  --input: #c1c8c4;
+  --ring: #42655b;
+
+  /* Bandhu-specific semantic tokens, not part of the generic shadcn set */
+  --status-safety: #d97706;
+  --warm-sand: #f9f6f1;
+  --mint-calm: #e8f3f0;
+  --evening-lavender: #f2eff6;
+}
+
+.dark {
+  --background: #17181a;
+  --foreground: #edeae2;
+
+  --card: #1e201c;
+  --card-foreground: #edeae2;
+
+  --popover: #1e201c;
+  --popover-foreground: #edeae2;
+
+  --primary: #a8cfc2;
+  --primary-foreground: #0c3229;
+
+  --secondary: #4f4537;
+  --secondary-foreground: #f0e0cc;
+
+  --muted: #2f3130;
+  --muted-foreground: #9b9c8f;
+
+  --accent: #22322b;
+  --accent-foreground: #a8cfc2;
+
+  --tertiary: #cfc1e1;
+  --tertiary-foreground: #20172f;
+  --tertiary-container: #4d425c;
+  --tertiary-container-foreground: #ecdcfd;
+
+  --destructive: #ffb4ab;
+  --destructive-foreground: #690005;
+
+  --border: #414845;
+  --input: #414845;
+  --ring: #a8cfc2;
+
+  --status-safety: #d68a4c;
+  --warm-sand: #221a0e;
+  --mint-calm: #22322b;
+  --evening-lavender: #2a2638;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-tertiary: var(--tertiary);
+  --color-tertiary-foreground: var(--tertiary-foreground);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-tertiary-container-foreground: var(--tertiary-container-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-status-safety: var(--status-safety);
+  --color-warm-sand: var(--warm-sand);
+  --color-mint-calm: var(--mint-calm);
+  --color-evening-lavender: var(--evening-lavender);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-pebble: 40% 60% 70% 30% / 40% 50% 60% 50%;
+
+  --font-sans: "Be Vietnam Pro", -apple-system, "Segoe UI", sans-serif;
+  --font-heading: var(--font-sans);
+
+  /* Stitch's own custom spacing scale, reused verbatim so ported
+     components keep the exact rhythm they were designed with. */
+  --spacing-stack-sm: 0.5rem;
+  --spacing-gutter: 1rem;
+  --spacing-stack-md: 1.5rem;
+  --spacing-edge-mobile: 1.25rem;
+  --spacing-edge-desktop: 2.5rem;
+  --spacing-stack-lg: 3rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+@layer utilities {
+  /* The one bespoke recipe Stitch hand-wrote outside its token system —
+     see frontend/DESIGN_SYSTEM.md. Kept as a utility class rather than a
+     shadow token because it's a full multi-layer composite, not a single
+     shadow value. */
+  .claymorphic-card {
+    background: color-mix(in srgb, var(--mint-calm) 70%, transparent);
+    backdrop-filter: blur(10px);
+    border-radius: var(--radius-xl);
+    box-shadow:
+      8px 8px 16px rgba(60, 56, 54, 0.05),
+      -8px -8px 16px rgba(255, 255, 255, 0.8),
+      inset 2px 2px 4px rgba(255, 255, 255, 0.5),
+      inset -2px -2px 4px rgba(60, 56, 54, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+  }
+
+  .bubble-companion {
+    border-bottom-left-radius: 4px;
+  }
+}

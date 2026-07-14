@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f9f9f7" />
+    <title>Bandhu — a companion, not a treatment tool</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      // Welcome is a real page load, deliberately outside the SPA — see
+      // frontend/README.md. It's a first-open-only gate: once someone has
+      // said hello AND accepted the current consent version, every later
+      // visit should land on Home instead. This has to run before paint
+      // (not inside a React effect) so a returning visitor never sees
+      // Welcome flash before redirecting.
+      //
+      // CONSENT_VERSION must match the literal in src/welcome/main.ts —
+      // bump both together when the age gate or Privacy Policy changes in
+      // a way that requires re-consent.
+      var CONSENT_VERSION = "1";
+      if (
+        localStorage.getItem("bandhu_visited") === "1" &&
+        localStorage.getItem("bandhu_consent_version") === CONSENT_VERSION
+      ) {
+        location.replace("/app/");
+      }
+    </script>
+  </head>
+  <body>
+    <div id="welcome-root" class="min-h-svh flex flex-col items-center justify-between bg-background px-edge-mobile py-stack-lg">
+      <div class="flex-1"></div>
+
+      <main class="flex flex-col items-center text-center gap-stack-md max-w-sm">
+        <div
+          class="w-48 h-48 rounded-full overflow-hidden shadow-lg animate-[softFadeIn_1.2s_ease-out]"
+          style="box-shadow: 0 20px 40px -12px color-mix(in srgb, var(--primary) 25%, transparent)"
+        >
+          <img
+            src="/mascot/mascot-cloud.jpg"
+            alt="Bandhu's mascot, sitting on a cloud"
+            class="w-full h-full object-cover"
+            width="512"
+            height="512"
+          />
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <h1 class="font-sans text-3xl font-semibold text-foreground">Bandhu</h1>
+          <p class="text-base text-muted-foreground leading-relaxed">
+            A companion, not a treatment tool.
+          </p>
+        </div>
+
+        <p class="text-sm text-muted-foreground leading-relaxed px-4">
+          No sign-up. No profile to fill out. Just a conversation, kept for two weeks and then let go.
+        </p>
+      </main>
+
+      <div class="flex-1 flex flex-col justify-end gap-stack-sm w-full max-w-sm">
+        <label class="flex items-start gap-2.5 px-1 text-left text-xs text-muted-foreground leading-snug">
+          <input
+            id="consent-checkbox"
+            type="checkbox"
+            class="mt-0.5 size-4 shrink-0 rounded border-input accent-primary"
+          />
+          <span>
+            I'm 13 or older, and I've read the
+            <a href="/privacy/" target="_blank" rel="noopener" class="text-foreground underline">Privacy Policy</a>.
+          </span>
+        </label>
+
+        <button
+          id="say-hello"
+          disabled
+          class="w-full rounded-full bg-primary text-primary-foreground text-base font-medium py-4 shadow-md transition-all active:scale-[0.98] disabled:opacity-40 disabled:shadow-none"
+        >
+          Say hello
+        </button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/welcome/main.ts"></script>
+  </body>
+</html>

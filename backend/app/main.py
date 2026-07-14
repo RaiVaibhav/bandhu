@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -35,6 +36,19 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(SessionMiddleware)
+# Added last so it's outermost — needs to wrap every other middleware to
+# attach CORS headers even to error responses, and to short-circuit
+# preflight OPTIONS requests before anything else runs. Frontend and
+# backend are different origins in dev (Vite on 5173/4173, FastAPI on
+# 8000) — explicit origins, not "*", since bandhu_sid is a credentialed
+# cookie and browsers reject wildcard-origin + credentials together.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:4173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
