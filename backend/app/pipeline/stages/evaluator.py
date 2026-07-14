@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.llm import EVALUATOR_MODEL, generate
 from app.config import telemetry_config
 from app.models.evaluator_scores import EvaluatorScore
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 # 5-10% of responses, per pipeline.html stage 12. Starting guess picked from
 # the middle of that range, not validated — same posture as every other
@@ -80,5 +80,10 @@ async def evaluate_reply(
     span.set_attribute("evaluator.acknowledgment_complete", result.acknowledgment_complete)
     if telemetry_config.message_content:
         span.set_attribute("evaluator.miti_scores", str(result.miti_scores))
+        record_io(
+            span,
+            input_data={"message_text": message_text, "response_text": response_text},
+            output_data=result.model_dump(),
+        )
 
     return result

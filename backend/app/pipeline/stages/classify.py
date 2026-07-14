@@ -5,7 +5,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.clients.llm import CLASSIFY_MODEL, generate
 from app.config import telemetry_config
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 SpecialCase = Literal["redirect-medical", "redirect-disorder", "redirect-medication", "redirect-document"]
 Category = Literal["grounding-technique", "thinking-trap", "life-decision-reflection", "dependency-reflection"]
@@ -23,7 +23,13 @@ If one applies, respond with exactly (substituting the matching value):
 {"special_case": "redirect-medical", "emotion": null, "category": null, "intensity": null, "confidence": "high"}
 
 Otherwise, respond with:
-{"special_case": null, "emotion": "<one or two words for emotional tone, e.g. 'anxious', 'sad', 'stressed', 'flat'>", "category": "<one of: grounding-technique, thinking-trap, life-decision-reflection, dependency-reflection — whichever kind of support this message calls for, if any>", "intensity": "<low, medium, or high>", "confidence": "<low or high>"}
+{"special_case": null, "emotion": "<one or two words for emotional tone, e.g. 'anxious', 'sad', 'stressed', 'flat'>", "category": "<see definitions below, or null if none clearly apply>", "intensity": "<low, medium, or high>", "confidence": "<low or high>"}
+
+Category definitions — pick the one whose definition the message actually matches, not just the closest-sounding label:
+- "thinking-trap": the message shows a DISTORTED way of interpreting something, not just a feeling — overgeneralizing ("always"/"never"/"everything"), harsh self-labeling ("I'm a failure", "I'm stupid"), assuming the worst outcome without evidence, mind-reading what others think, all-or-nothing framing. Example: "I always mess everything up, I'm a failure at everything."
+- "grounding-technique": general distress, low mood, grief, stress, or feeling overwhelmed WITHOUT a specific distorted thought pattern to name. Example: "I'm just really sad today" or "work has been so overwhelming."
+- "life-decision-reflection": the person is actively weighing a real decision (job, relationship, moving, etc.). Example: "I don't know if I should quit my job."
+- "dependency-reflection": the message expresses emotional reliance specifically on THIS APP/companion itself, not on people in their life generally. Example: "you're the only one who gets me."
 
 Use "confidence": "low" and leave emotion/category/intensity as null if the message is too short, ambiguous, or low-signal to classify honestly (e.g. "idk", a bare emoji, "ok") — never force-fit a message like that into the nearest category just to fill the field."""
 
@@ -76,5 +82,6 @@ async def classify(message_text: str) -> ClassifyResult:
         span.set_attribute("classify.emotion", result.emotion or "none")
         span.set_attribute("classify.category", result.category or "none")
         span.set_attribute("classify.intensity", result.intensity or "none")
+        record_io(span, input_data=message_text, output_data=result.model_dump())
 
     return result

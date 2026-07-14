@@ -37,6 +37,17 @@ class PipelineResult(BaseModel):
     checkin_id: UUID | None = None
     crisis: bool = False
     helplines: list[dict] = []
+    # Surfaces stage 7's directive so the frontend can render the muted
+    # quiet-line contextually (ux-flow.html: "at most one small, muted,
+    # easy-to-ignore line") and route "want to look at it together?" into
+    # Thinking Trap specifically, rather than a generic suggestion.
+    help_offer_type: str | None = None
+    # Which content_entries row (if any) an "offer_suggestion" turn drew
+    # from — e.g. "bt-001" for the breathing invitation. Lets the frontend
+    # route a specific suggestion to a real matching screen (Response.tsx
+    # routes bt-* to /breathe) instead of only ever getting a generic
+    # muted-line experience regardless of what was actually offered.
+    suggestion_entry_key: str | None = None
 
 
 @traced("pipeline.run")
@@ -110,7 +121,12 @@ async def run_pipeline(
         input_mode=normalized.input_mode,
     )
 
-    return PipelineResult(response_text=final_text, checkin_id=checkin_id)
+    return PipelineResult(
+        response_text=final_text,
+        checkin_id=checkin_id,
+        help_offer_type=directive.tool if is_help_offer else None,
+        suggestion_entry_key=directive.target_entry_key if directive.tool == "offer_suggestion" else None,
+    )
 
 
 async def _handle_crisis(

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import telemetry_config
 from app.models.conversation_turns import ConversationTurn
 from app.models.user_memory_summary import UserMemorySummary
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 CONVERSATION_WINDOW = timedelta(hours=2)
 CONVERSATION_TURN_LIMIT = 12
@@ -78,5 +78,7 @@ async def read_memory(db: AsyncSession, session_id: UUID) -> MemoryReadResult:
     summary_text = await read_summary(db, session_id)
     recent_turns = await read_recent_turns(db, session_id)
     if telemetry_config.message_content:
-        trace.get_current_span().set_attribute("memory.summary_text", summary_text or "")
+        span = trace.get_current_span()
+        span.set_attribute("memory.summary_text", summary_text or "")
+        record_io(span, output_data={"summary_text": summary_text, "recent_turns": recent_turns})
     return MemoryReadResult(summary_text=summary_text, recent_turns=recent_turns)

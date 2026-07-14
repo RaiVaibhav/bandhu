@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.embeddings import embed_query
 from app.config import telemetry_config
 from app.models.content_entries import ContentEntry
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 # Structural guarantee, not just an application convention: high-risk
 # content is never reachable by similarity search, only 'low'/'medium'.
@@ -65,5 +65,10 @@ async def retrieve(
     span.set_attribute("retrieval.result_count", len(chunks))
     if telemetry_config.retrieval_content:
         span.set_attribute("retrieval.entry_keys", [c.entry_key for c in chunks])
+        record_io(
+            span,
+            input_data={"message_text": message_text, "categories": categories, "language": language},
+            output_data=[c.entry_key for c in chunks],
+        )
 
     return chunks

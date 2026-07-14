@@ -168,4 +168,80 @@
   .bubble-companion {
     border-bottom-left-radius: 4px;
   }
+
+  .bubble-user {
+    border-bottom-right-radius: 4px;
+  }
+
+  /* Ported from Stitch's "Home Experience (Reimagined)" mockup — see
+     frontend/DESIGN_SYSTEM.md's re-extraction note. Keyframe names/timings
+     copied as-is, not approximated. */
+  .organic-bg {
+    background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--mint-calm) 80%, transparent) 0%, transparent 70%);
+    animation: bandhu-breathe-bg 8s ease-in-out infinite;
+  }
+
+  .animate-float {
+    animation: bandhu-float 6s ease-in-out infinite;
+  }
+
+  .animate-pebble-1 {
+    animation: bandhu-pebble-1 7s ease-in-out infinite;
+  }
+
+  .animate-pebble-2 {
+    animation: bandhu-pebble-2 9s ease-in-out infinite;
+  }
+
+  .animate-pebble-3 {
+    animation: bandhu-pebble-3 8s ease-in-out infinite;
+  }
+}
+
+@keyframes bandhu-breathe-bg {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes bandhu-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-15px); }
+}
+
+@keyframes bandhu-pebble-1 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-10px, -15px); }
+}
+
+@keyframes bandhu-pebble-2 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(15px, 10px); }
+}
+
+@keyframes bandhu-pebble-3 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(5px, -20px); }
+}
+
+/* Ported from Stitch's "Immersive Breathing Experience" mockup — see
+   frontend/DESIGN_SYSTEM.md's re-extraction note. */
+.breathing-bg {
+  background: linear-gradient(135deg, var(--warm-sand), var(--mint-calm), var(--secondary-container, var(--mint-calm)));
+  background-size: 200% 200%;
+  animation: bandhu-pulse-bg 12s ease-in-out infinite;
+}
+
+.animate-breathe-scale {
+  animation: bandhu-breathe-scale 12s ease-in-out infinite;
+}
+
+@keyframes bandhu-pulse-bg {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes bandhu-breathe-scale {
+  0%, 33% { transform: scale(0.95); }
+  50% { transform: scale(1.08); }
+  66%, 100% { transform: scale(0.95); }
 }

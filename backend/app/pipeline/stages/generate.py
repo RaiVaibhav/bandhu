@@ -5,7 +5,7 @@ from app.clients.llm import generate as llm_generate
 from app.config import telemetry_config
 from app.pipeline.stages.orchestrator_judgment import OrchestratorDirective
 from app.pipeline.stages.retrieval import RetrievedChunk
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 # ~60-word cap per pipeline.html — 150 tokens is generous headroom over that
 # for English (~1.3 tokens/word), matches the worked example in
@@ -50,6 +50,20 @@ def _directive_instruction(directive: OrchestratorDirective, retrieved_chunks: l
             "name or describe the specific pattern you noticed; that comes later, only if they opt in."
         )
 
+    if directive.tool == "thinking_trap_followup":
+        chunk = next((c for c in retrieved_chunks if c.entry_key == directive.target_entry_key), None)
+        content = chunk.text if chunk else ""
+        return (
+            "This turn is different from your usual one-line acknowledgment — the person just told you "
+            f'which thinking pattern actually fits them: "{content}" Go deeper here, not shorter. Warmly '
+            "acknowledge that they named it (this takes real self-awareness), weave in what that pattern "
+            "actually is in your own words — never just repeat the definition back like a dictionary entry — "
+            "and then ask ONE genuine, curious, specific question inviting them to tell you about an actual "
+            "recent moment this showed up for them. Sound like a curious companion leaning in, not a "
+            "clinician summarizing a diagnosis or a form asking for details. Two to four sentences is fine "
+            "here — this is the one turn allowed to run longer than the usual short reply."
+        )
+
     return "This turn: acknowledgment only."  # unreachable given OrchestratorDirective's Literal type
 
 
@@ -60,12 +74,19 @@ async def generate_reply(
     summary_text: str | None,
     directive: OrchestratorDirective,
     retrieved_chunks: list[RetrievedChunk],
+    max_tokens: int = MAX_TOKENS,
 ) -> str:
     """Stage 8 — see backend-architecture.md §4/§6. Doesn't decide anything
     new; only phrases whatever stage 7 already decided. system/messages stay
     structurally split, same as §6 — the long-term summary lives only in
     system, never in messages, so it can't come out looking like something
-    just said."""
+    just said.
+
+    max_tokens defaults to the ~60-word cap every ordinary turn gets, but
+    thinking_trap_followup deliberately calls this with a higher ceiling
+    (main.py's POST /thinking-trap) — that's the one turn meant to run
+    longer than a normal acknowledgment, per its own directive instruction
+    below telling the model exactly that."""
     messages = [{"role": t["role"], "content": t["content"]} for t in recent_turns]
     messages.append({"role": "user", "content": message_text})
 
@@ -80,7 +101,7 @@ Rolling context on this person — for your own awareness only, never to be reci
         model=GENERATE_MODEL,
         system=system_prompt,
         messages=messages,
-        max_tokens=MAX_TOKENS,
+        max_tokens=max_tokens,
     )
 
     span = trace.get_current_span()
@@ -88,5 +109,6 @@ Rolling context on this person — for your own awareness only, never to be reci
     span.set_attribute("generate.response_length_chars", len(response_text))
     if telemetry_config.message_content:
         span.set_attribute("generate.response_text", response_text)
+        record_io(span, input_data={"message_text": message_text, "directive": directive.tool}, output_data=response_text)
 
     return response_text

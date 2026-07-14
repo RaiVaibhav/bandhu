@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import telemetry_config
 from app.models.helplines import Helpline
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 # Fixed template text — not knowledge-base content (no clinical claim, no
 # retrieval), so it lives here as a constant rather than in redirect_templates
@@ -61,6 +61,11 @@ async def build_crisis_response(db: AsyncSession, should_display: bool, audience
     span.set_attribute("crisis_response.verified_helpline_count", len(helplines))
     if telemetry_config.message_content:
         span.set_attribute("crisis_response.orgs", [h["org_name"] for h in helplines])
+        record_io(
+            span,
+            input_data={"should_display": should_display, "audience": audience},
+            output_data={"card_shown": should_display, "orgs": [h["org_name"] for h in helplines]},
+        )
 
     if not should_display:
         return CrisisResponse(response_text=SUPPRESSED_CARD_TEXT, helplines=[], card_shown=False)

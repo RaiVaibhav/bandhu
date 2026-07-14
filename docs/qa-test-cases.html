@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bandhu — QA Test Cases</title>
+<style>
+  :root{
+    --bg:#F6F4EF; --surface:#FFFFFF; --ink:#21231F; --muted:#6E7268; --border:#DEDACE;
+    --accent:#3E6B5E; --accent-soft:#E4ECE8; --amber:#A8672E; --amber-soft:#F3E7D6;
+    --violet:#5C5378; --violet-soft:#EBE8F2; --red:#B3492F; --red-soft:#F5E4DE;
+    --shadow: 0 1px 2px rgba(33,35,31,0.06), 0 1px 1px rgba(33,35,31,0.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17181A; --surface:#1E201C; --ink:#EDEAE2; --muted:#9B9C8F; --border:#34362F;
+      --accent:#79AC9B; --accent-soft:#22322B; --amber:#D68A4C; --amber-soft:#392A18;
+      --violet:#B2A8D6; --violet-soft:#2A2638; --red:#D6836F; --red-soft:#3A241D;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+  }
+
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; line-height:1.5; }
+  .wrap{ max-width:980px; margin:0 auto; padding: 56px 28px 96px; }
+  h1,h2{ font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-weight:600; text-wrap:balance; color:var(--ink); margin:0; }
+
+  header.top{ margin-bottom:40px; border-bottom:1px solid var(--border); padding-bottom:28px; }
+  header.top .eyebrow{ font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:10px; }
+  header.top h1{ font-size:32px; margin-bottom:12px; }
+  header.top p{ color:var(--muted); font-size:15px; max-width:70ch; margin:0 0 8px; }
+  header.top p:last-child{ margin-bottom:0; }
+  header.top a{ color:var(--accent); }
+
+  section{ margin-top:44px; }
+  .section-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+  .section-head h2{ font-size:19px; }
+  .section-head .count{ font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .section-note{ font-size:13.5px; color:var(--muted); margin:-8px 0 18px; max-width:74ch; }
+
+  table{ width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }
+  thead th{ text-align:left; font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:var(--muted); padding:12px 14px; border-bottom:1px solid var(--border); background:var(--accent-soft); }
+  tbody td{ padding:13px 14px; border-bottom:1px solid var(--border); font-size:13.5px; vertical-align:top; }
+  tbody tr:last-child td{ border-bottom:none; }
+  td.id{ font-variant-numeric:tabular-nums; color:var(--muted); white-space:nowrap; }
+  td code{ background:var(--accent-soft); color:var(--accent); padding:1px 6px; border-radius:5px; font-size:12.5px; white-space:nowrap; }
+  td.expect{ color:var(--ink); }
+  td.status{ white-space:nowrap; }
+  .pill{ display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; padding:2px 9px; border-radius:20px; }
+  .pill.pass{ background:var(--accent-soft); color:var(--accent); }
+  .pill.fail{ background:var(--red-soft); color:var(--red); }
+  .pill.todo{ background:var(--border); color:var(--muted); }
+  .pill.expected{ background:var(--amber-soft); color:var(--amber); }
+  .note{ display:block; margin-top:4px; font-size:12px; color:var(--muted); }
+
+  footer{ margin-top:64px; padding-top:20px; border-top:1px solid var(--border); font-size:12.5px; color:var(--muted); }
+  footer a{ color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow">Bandhu — QA</div>
+    <h1>Manual test cases</h1>
+    <p>Concrete, reproducible cases for exercising the real flow end to end — backend + frontend, no mocks. Written from the actual bugs found wiring this up (see <a href="../frontend/README.md">frontend/README.md</a>'s "Known gaps" for the ones that are permanent, not fixable by retesting).</p>
+    <p>Status column is meant to be hand-updated as you actually run these locally — not a claim about current state. <span class="pill expected">expected fail</span> means the case documents a known, deliberate gap, not a bug to chase.</p>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <h2>Crisis detection</h2>
+      <span class="count">safety_gate.py — requires <code>scripts/seed_safety_patterns.py</code> run locally first</span>
+    </div>
+    <p class="section-note">Matching is plain substring, case-insensitive, against <code>safety_patterns</code> — seeded from the draft, self-vetted list only. Anything not a literal phrase in that list will not trigger, by design, until a professional review happens.</p>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">C1</td>
+          <td>On Home, type <code>I want to die</code> and tap Share.</td>
+          <td class="expect">Navigates to Crisis Support. Real helpline cards render (Vandrevala ×2, iCall, KIRAN, Dial 112) — not the hardcoded frontend fallback.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">C2</td>
+          <td>Type <code>I don't want to be here anymore</code>.</td>
+          <td class="expect">Same as C1 — direct-statement pattern match.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">C3</td>
+          <td>Type <code>I've been hurting myself</code>.</td>
+          <td class="expect">Same as C1 — self-harm pattern match, distinct <code>pattern_type</code> from C1/C2 but same routing.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">C4</td>
+          <td>Type <code>I feel like dying</code> (a natural phrasing, <em>not</em> a literal seeded string).</td>
+          <td class="expect"><code>crisis: false</code>. Stays on Response with a normal warm reply. This is the known keyword-matching gap — confirmed 2026-07-14, see conversation log — not a bug to re-report without new information.</td>
+          <td class="status"><span class="pill expected">expected fail</span></td>
+        </tr>
+        <tr>
+          <td class="id">C5</td>
+          <td>Trigger C1 twice within the same session, a few minutes apart.</td>
+          <td class="expect">Second time: <code>crisis: true</code> still (detection never skips), but check whether the card content differs — <code>should_display</code>/suppression logic (<code>SUPPRESSION_WINDOW</code>, 2h) should show the softer "I'm still here with you" card, not re-render the full card.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">C6</td>
+          <td>Trigger a crisis phrase from <strong>Thinking Trap's</strong> composer (after selecting a pattern) instead of Home.</td>
+          <td class="expect">Same crisis routing fires from that entry point too — <code>ThinkingTrap.tsx</code> has its own <code>result.crisis</code> check.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Response — multi-turn conversation</h2>
+      <span class="count">Response.tsx</span>
+    </div>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">R1</td>
+          <td>From Home, send a first message. On Response, send 2-3 more messages in a row.</td>
+          <td class="expect">Each reply appends as a new bubble (companion left, you right). Composer stays pinned to the bottom of the screen; message list scrolls internally, page itself never grows taller than the viewport.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">R2</td>
+          <td>Reference something you said 2 messages ago (e.g. "the exam thing I mentioned").</td>
+          <td class="expect">Reply shows awareness of it — same-session memory (<code>read_recent_turns</code>, 2h/12-turn window) working, not just single-shot.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">R3</td>
+          <td>Send a message likely to produce a thinking-trap nudge, e.g. <code>I always mess everything up, I'm a failure at everything</code>. Retry with a fresh session 2-3 times if it doesn't fire the first time.<span class="note">Confirmed 2026-07-14: this is a genuine Orchestrator judgment call, not a rule — same exact message fired ~50% of the time across 4 fresh sessions. One silent reply isn't a bug; only report if it never fires across several tries with <code>category=thinking-trap</code> confirmed in the Langfuse trace.</span></td>
+          <td class="expect">When it fires: reply renders normally, plus a small muted line "Want to look at it together?" beneath that specific bubble only (not every bubble). Tapping it opens Thinking Trap.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">R4</td>
+          <td>Stop the backend (<code>kill</code> the uvicorn process), then send a message on Response.</td>
+          <td class="expect">Inline error banner with a Retry button — no crash, no stuck spinner. Restart the backend, tap Retry, message sends successfully.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">R5</td>
+          <td>Refresh the page directly on <code>/app/response</code> (no router state).</td>
+          <td class="expect">Doesn't crash — shows the fallback acknowledgment ("I hear you. That sounds like a lot to carry.") as a valid, complete screen on its own.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Thinking Trap</h2>
+      <span class="count">ThinkingTrap.tsx — requires <code>scripts/ingest_content.py</code> run first</span>
+    </div>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">T1</td>
+          <td>Reach Thinking Trap via a "Want to look at it together?" line (see R3), select "Fortune Telling", tap Continue.</td>
+          <td class="expect">Sends a bridged message and lands on Response with a reply that's actually about predicting bad outcomes without evidence — not a generic reply. Confirms real retrieval against the seeded <code>content_entries</code> rows, not a canned string.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">T2</td>
+          <td>On Thinking Trap, tap Continue with nothing selected.</td>
+          <td class="expect">Continue button stays disabled — no request sent.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">T3</td>
+          <td>Select a pattern, but the selection itself happens to read as crisis language (unlikely but worth checking once).</td>
+          <td class="expect">Still routes to Crisis Support correctly — <code>ThinkingTrap.tsx</code>'s own <code>result.crisis</code> branch, independent of Response's.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Breathing</h2>
+      <span class="count">Breathing.tsx + <code>POST /breathe</code></span>
+    </div>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">B1</td>
+          <td>On Home, tap "Breathe" in the secondary actions row.</td>
+          <td class="expect">Full-screen breathing view opens immediately (no loading spinner blocking it — the log call is fire-and-forget). Circle animates through a 4-4-4-4 in/hold/out/hold cycle, phase label updates each step.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">B2</td>
+          <td>Leave the breathing screen open through 2-3 full cycles, then tap the ✕.</td>
+          <td class="expect">Returns to the previous screen. No error, no stuck state. Check <code>GET /looking-back</code> afterward — a <code>theme: "breathing"</code> checkin should be logged.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Looking Back</h2>
+      <span class="count">LookingBack.tsx + <code>GET /looking-back</code></span>
+    </div>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">L1</td>
+          <td>On a brand-new session (no prior check-ins), open Looking Back via the header icon.</td>
+          <td class="expect">Cold-start copy renders ("Nothing to look back on yet…"), not a blank screen or error — <code>summary_text</code> is genuinely <code>null</code> until the nightly Summarizer job runs at least once.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">L2</td>
+          <td>After a few real check-ins in one session, open Looking Back.</td>
+          <td class="expect">Daily timeline shows each checkin's mood/theme, most recent date first, grouped correctly by day. Still no <code>summary_text</code> unless the Summarizer job has actually run (nightly, not per-message) — that's expected, not a bug.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Settings</h2>
+      <span class="count">Settings.tsx + <code>DELETE /session</code></span>
+    </div>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">S1</td>
+          <td>Toggle language to हिन्दी, reload the page, revisit Settings.</td>
+          <td class="expect">Selection persisted (reads from <code>localStorage</code>). Nothing else in the app actually translates — that's the documented gap, not a bug.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">S2</td>
+          <td>Have a few check-ins logged. Tap "Delete my data" once, then tap it again to confirm.</td>
+          <td class="expect">Second tap actually deletes — first tap only arms the confirm state, doesn't delete. Navigates back to Home. Immediately after, <code>GET /looking-back</code> returns an empty <code>checkins</code> list — a fresh session, cascade delete worked.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">S3</td>
+          <td>Tap "Delete my data" once, then navigate away without confirming.</td>
+          <td class="expect">Nothing deleted. Returning to Settings later shows the button back in its normal (non-confirming) state.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">S4</td>
+          <td>Tap the Privacy Policy button.</td>
+          <td class="expect">Opens <code>/privacy/</code> with the real contact email, not a placeholder.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Home — mood, loading, error states</h2>
+      <span class="count">Home.tsx</span>
+    </div>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">H1</td>
+          <td>Tap a mood (e.g. "Anxious") with the text box empty, then tap Share.</td>
+          <td class="expect">Sends successfully — <code>MOOD_ONLY_TEXT</code> bridges the tap into a plain sentence server-side sees as normal text. Share button is enabled the moment a mood is tapped, even with no typed text.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">H2</td>
+          <td>Tap Share with both text empty and no mood selected.</td>
+          <td class="expect">Share button stays disabled — no request sent.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">H3</td>
+          <td>Type a message, tap Share, and watch the button while the request is in flight.</td>
+          <td class="expect">Button shows a spinner and is disabled — can't double-submit by tapping again.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">H4</td>
+          <td>Stop the backend, send a message from Home.</td>
+          <td class="expect">Inline error banner with Retry, same pattern as R4. Spinner clears, button re-enables.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Cross-cutting / infra</h2>
+      <span class="count">session, CORS, telemetry</span>
+    </div>
+    <table>
+      <thead><tr><th style="width:52px">#</th><th>Steps</th><th>Expected</th><th style="width:110px">Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id">X1</td>
+          <td>Close the browser tab entirely, reopen <code>localhost:5173</code>, go straight to Home (skip Welcome — <code>bandhu_visited</code> already set).</td>
+          <td class="expect"><code>bandhu_sid</code> cookie persists across the restart (14-day expiry, not session-only) — a message sent still has access to the same conversation history as before closing.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">X2</td>
+          <td>After any real <code>/message</code> call, check the Langfuse dashboard for that trace.</td>
+          <td class="expect">Every stage span (<code>pipeline.ingest</code>, <code>pipeline.classify</code>, <code>pipeline.retrieval</code>, <code>pipeline.generate</code>, etc.) shows real Input/Output, not blank — requires <code>TELEMETRY_LOG_MESSAGE_CONTENT=true</code> in local <code>.env</code> (already set for local dev, see <code>backend/.env</code>'s comment — flip back to <code>false</code> before anything shared).</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+        <tr>
+          <td class="id">X3</td>
+          <td>Fire 5+ messages in quick succession (well under a minute).</td>
+          <td class="expect">All succeed under 30s each. If one times out, it should fail once (~30s), not 3× (~90-112s) — confirms <code>max_retries=0</code> is actually in effect on both NVIDIA clients.</td>
+          <td class="status"><span class="pill todo">todo</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    Back to <a href="index.html">docs index</a>. This file has no test-runner behind it — it's a checklist to work through by hand in an actual mobile-width browser, per <a href="../frontend/README.md">frontend/README.md</a>'s own "No automated tests" gap.
+  </footer>
+
+</div>
+</body>
+</html>

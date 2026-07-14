@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, CheckConstraint, Date, DateTime, Text, func
+from sqlalchemy import ARRAY, CheckConstraint, Computed, Date, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,8 +46,13 @@ class ContentEntry(Base):
     source_citation: Mapped[str | None] = mapped_column(Text)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSION))
     # Generated column — populated by Postgres itself, not written by the app.
-    # See migration for the actual GENERATED ALWAYS AS expression.
-    search_vector: Mapped[str | None] = mapped_column(TSVECTOR)
+    # Needs Computed(...) here too, matching the migration's GENERATED ALWAYS
+    # AS expression exactly — without it, the ORM treats this as a plain
+    # nullable column and includes it (as NULL) in every INSERT, which
+    # Postgres rejects for a generated column ("cannot insert a non-DEFAULT
+    # value"). First surfaced 2026-07-14 the first time anything actually
+    # inserted a content_entries row (scripts/ingest_content.py).
+    search_vector: Mapped[str | None] = mapped_column(TSVECTOR, Computed("to_tsvector('english', text)", persisted=True))
     vetted_by: Mapped[str | None] = mapped_column(Text)
     vetted_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

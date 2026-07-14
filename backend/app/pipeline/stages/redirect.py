@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import telemetry_config
 from app.pipeline.stages.classify import SpecialCase
 from app.models.redirect_templates import RedirectTemplate
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 # Used only when a category has no professional-reviewed row yet — see
 # vector-database.md §4: "As of 2026-07-11, none of the four redirect
@@ -38,5 +38,6 @@ async def get_redirect(db: AsyncSession, category: SpecialCase) -> str:
     span.set_attribute("redirect.template_found", template_text is not None)
     if telemetry_config.message_content:
         span.set_attribute("redirect.response_text", template_text or FALLBACK_TEXT)
+        record_io(span, input_data=category, output_data=template_text or FALLBACK_TEXT)
 
     return template_text or FALLBACK_TEXT

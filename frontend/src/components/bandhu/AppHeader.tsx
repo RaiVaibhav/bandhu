@@ -1,8 +1,13 @@
 import { useNavigate } from "react-router";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, History, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function AppHeader({ back }: { back?: boolean }) {
+/** `menu` shows Looking Back / Settings — the two screens ux-flow.html
+ * describes as "always reachable, not part of the check-in sequence...
+ * sit behind the bottom nav / menu." There's no bottom nav built yet, so
+ * these two icon buttons on Home are the actual persistent entry point for
+ * now, not a placeholder — see frontend/README.md. */
+export function AppHeader({ back, menu }: { back?: boolean; menu?: boolean }) {
   const navigate = useNavigate();
 
   return (
@@ -23,7 +28,18 @@ export function AppHeader({ back }: { back?: boolean }) {
       <span className="flex-1 text-center font-heading text-base font-semibold text-foreground">
         Bandhu
       </span>
-      <div className="size-8" aria-hidden />
+      {menu ? (
+        <div className="-mr-2 flex items-center gap-1">
+          <Button variant="ghost" size="icon" aria-label="Looking Back" onClick={() => navigate("/looking-back")}>
+            <History className="size-4.5" />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label="Settings" onClick={() => navigate("/settings")}>
+            <Settings className="size-4.5" />
+          </Button>
+        </div>
+      ) : (
+        <div className="size-8" aria-hidden />
+      )}
     </header>
   );
 }

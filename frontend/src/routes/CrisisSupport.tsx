@@ -1,38 +1,59 @@
+import { useLocation } from "react-router";
 import { Phone } from "lucide-react";
 import { AppHeader } from "@/components/bandhu/AppHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import type { Helpline } from "@/lib/apiClient";
 
-// Real, dial-confirmed numbers only — see knowledge-base/safety/
+// Fallback only — used for the dev-only design preview (Home's "View
+// Crisis Support" link) when there's no real backend response to show.
+// Real, dial-confirmed numbers — see knowledge-base/safety/
 // helpline-directory.md (verified 2026-07-13). Deliberately no WhatsApp
-// link here: the directory only confirms these numbers connect by voice
-// call, not that a WhatsApp number exists for them — inventing one would
-// be exactly the failure mode that file warns against.
-const HELPLINES = [
-  {
-    org: "Vandrevala Foundation",
-    description: "24x7 mental health helpline, multi-lingual support.",
-    numbers: [
-      { label: "1860-266-2345", tel: "18602662345" },
-      { label: "1800-233-3330", tel: "18002333330" },
-    ],
-  },
-  {
-    org: "iCall (TISS)",
-    description: "Free telephone counseling by trained professionals.",
-    numbers: [{ label: "9152987821", tel: "9152987821" }],
-  },
-  {
-    org: "KIRAN",
-    description: "Government of India mental health helpline.",
-    numbers: [{ label: "1800-599-0019", tel: "18005990019" }],
-  },
+// link: the directory only confirms these connect by voice call, not that
+// a WhatsApp number exists for them.
+const FALLBACK_HELPLINES: Helpline[] = [
+  { org_name: "Vandrevala Foundation", phone_number: "1860-266-2345", hours: null },
+  { org_name: "Vandrevala Foundation", phone_number: "1800-233-3330", hours: null },
+  { org_name: "iCall (TISS)", phone_number: "9152987821", hours: null },
+  { org_name: "KIRAN", phone_number: "1800-599-0019", hours: null },
 ];
+
+const ORG_DESCRIPTIONS: Record<string, string> = {
+  "Vandrevala Foundation": "24x7 mental health helpline, multi-lingual support.",
+  "iCall (TISS)": "Free telephone counseling by trained professionals.",
+  KIRAN: "Government of India mental health helpline.",
+};
+
+function telHref(phoneNumber: string) {
+  return `tel:${phoneNumber.replace(/[^0-9+]/g, "")}`;
+}
+
+function groupByOrg(helplines: Helpline[]) {
+  const byOrg = new Map<string, Helpline[]>();
+  for (const h of helplines) {
+    const existing = byOrg.get(h.org_name);
+    if (existing) existing.push(h);
+    else byOrg.set(h.org_name, [h]);
+  }
+  return [...byOrg.entries()];
+}
+
+type CrisisSupportState = {
+  helplines?: Helpline[];
+};
 
 /** Deliberately different in tone from every other screen — amber, not
  * alarm-red, per docs/ux-flow.html. Real numbers, zero cleverness: this is
- * a hand-off to a real person, not something the app manages further. */
+ * a hand-off to a real person, not something the app manages further.
+ * Prefers the live list the backend just returned (build_crisis_response,
+ * app/pipeline/stages/crisis_response.py — only ever verified rows) over
+ * the hardcoded fallback, so a real crisis card reflects the database of
+ * record, not a frontend copy that could drift out of date. */
 export default function CrisisSupport() {
+  const location = useLocation();
+  const state = (location.state ?? {}) as CrisisSupportState;
+  const helplines = state.helplines && state.helplines.length > 0 ? state.helplines : FALLBACK_HELPLINES;
+
   return (
     <div className="flex min-h-svh flex-col bg-background">
       <AppHeader back />
@@ -48,23 +69,21 @@ export default function CrisisSupport() {
         </div>
 
         <div className="flex flex-col gap-3">
-          {HELPLINES.map((h) => (
-            <Card
-              key={h.org}
-              className="border-l-4 py-4"
-              style={{ borderLeftColor: "var(--color-status-safety)" }}
-            >
+          {groupByOrg(helplines).map(([org, numbers]) => (
+            <Card key={org} className="border-l-4 py-4" style={{ borderLeftColor: "var(--color-status-safety)" }}>
               <CardContent className="flex flex-col gap-3">
                 <div>
-                  <p className="font-medium text-foreground">{h.org}</p>
-                  <p className="text-xs text-muted-foreground">{h.description}</p>
+                  <p className="font-medium text-foreground">{org}</p>
+                  {ORG_DESCRIPTIONS[org] && (
+                    <p className="text-xs text-muted-foreground">{ORG_DESCRIPTIONS[org]}</p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {h.numbers.map((n) => (
-                    <Button key={n.tel} asChild variant="secondary" className="rounded-full">
-                      <a href={`tel:${n.tel}`}>
+                  {numbers.map((n) => (
+                    <Button key={n.phone_number} asChild variant="secondary" className="rounded-full">
+                      <a href={telHref(n.phone_number)}>
                         <Phone className="size-3.5" data-icon="inline-start" />
-                        {n.label}
+                        {n.phone_number}
                       </a>
                     </Button>
                   ))}
@@ -73,10 +92,7 @@ export default function CrisisSupport() {
             </Card>
           ))}
 
-          <Card
-            className="border-l-4 py-4"
-            style={{ borderLeftColor: "var(--color-status-safety)" }}
-          >
+          <Card className="border-l-4 py-4" style={{ borderLeftColor: "var(--color-status-safety)" }}>
             <CardContent className="flex flex-col gap-3">
               <div>
                 <p className="font-medium text-foreground">Medical Emergency</p>

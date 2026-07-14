@@ -1,3 +1,5 @@
+import logging
+import re
 from typing import Literal
 
 from opentelemetry import trace
@@ -7,9 +9,27 @@ from app.clients.llm import ORCHESTRATOR_MODEL, generate
 from app.config import telemetry_config
 from app.pipeline.stages.classify import ClassifyResult
 from app.pipeline.stages.retrieval import RetrievedChunk
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
-Tool = Literal["close_the_loop", "offer_suggestion", "notice_thinking_trap"]
+logger = logging.getLogger(__name__)
+
+# nemotron-49b (ORCHESTRATOR_MODEL) occasionally wraps its JSON in markdown
+# fencing plus a preamble sentence despite the system prompt's explicit
+# "ONLY a JSON object, no markdown fencing" — observed directly 2026-07-14
+# (1 in 5 identical calls). Cheap enough to just pull the first {...} block
+# out before giving up on it entirely.
+_JSON_OBJECT_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+
+Tool = Literal["close_the_loop", "offer_suggestion", "notice_thinking_trap", "thinking_trap_followup"]
+# thinking_trap_followup is never picked by the Orchestrator LLM itself —
+# it's absent from ORCHESTRATOR_SYSTEM_PROMPT_TEMPLATE's available_tools
+# below, so the model has no way to choose it. It's constructed directly
+# by main.py's POST /thinking-trap route, once the person has already
+# named their own pattern on the Thinking Trap screen — that's a
+# deterministic follow-through, not a fresh discretionary judgment call, so
+# it bypasses stage 7 (Orchestrator judgment) entirely rather than asking
+# the model to re-decide something already decided. See generate.py's
+# _directive_instruction for the actual phrasing behavior.
 
 ORCHESTRATOR_SYSTEM_PROMPT_TEMPLATE = """You are the judgment step in a companion mental-health check-in app called Bandhu. This is the ONLY place in the whole pipeline that makes a real discretionary call — everything before you was deterministic. Respond with ONLY a JSON object, no other text, no markdown fencing.
 
@@ -27,7 +47,8 @@ Rules that matter:
 - notice_thinking_trap is a quiet, general offer only — do NOT name or hint at which specific thinking pattern you noticed. That naming happens later, only if the person opts in.
 - offer_suggestion's target_entry_key must be one of the entry_keys actually given to you below — if none of them genuinely fit what this person said, choose silence instead of forcing one.
 - close_the_loop only if there's something real and specific to reference from this person's history below — if there's nothing, choose silence. Never fabricate a memory.
-- This is a companion, not a suggestion engine. When in doubt between offering something and staying quiet, stay quiet."""
+- Exception to "when in doubt, stay quiet": if the person is directly naming a coping action they themselves want right now (e.g. "I just want to breathe", "can we do a breathing exercise") and a retrieved item genuinely matches that specific thing, offer it — don't go quiet on someone who just asked for exactly this. Staying silent there reads as not listening, not as restraint. The default-to-silence bias is about not pushing help onto someone who didn't ask, not about declining a direct ask.
+- This is a companion, not a suggestion engine. When in doubt between offering something and staying quiet, stay quiet — except the direct-ask case just above."""
 
 
 class OrchestratorDirective(BaseModel):
@@ -112,23 +133,48 @@ async def judge(
     system_prompt = _build_system_prompt(eligible_for_offer)
     user_message = _build_user_message(message_text, tags, summary_text, recent_turns, retrieved_chunks)
 
-    raw_response = await generate(
-        model=ORCHESTRATOR_MODEL,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}],
-        max_tokens=300,
-    )
-
+    # This is the one genuinely discretionary call in the whole pipeline
+    # (see this file's own system prompt), never something the rest of the
+    # reply should depend on — a timeout or upstream failure here degrades
+    # to silence, the same as a malformed response below, rather than
+    # crashing the whole /message request. Confirmed necessary 2026-07-14:
+    # nemotron-49b's latency on a realistic prompt ranged 2-26s across 5
+    # identical calls and occasionally exceeded the client's 30s timeout
+    # outright — this used to take the entire pipeline down with it.
     try:
-        parsed = OrchestratorDirective.model_validate_json(raw_response)
-    except ValidationError:
-        parsed = SILENCE
+        raw_response = await generate(
+            model=ORCHESTRATOR_MODEL,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+            max_tokens=300,
+        )
+    except Exception:
+        logger.exception("Orchestrator judgment call failed — falling back to silence.")
+        raw_response = None
+
+    parsed = SILENCE
+    if raw_response is not None:
+        try:
+            parsed = OrchestratorDirective.model_validate_json(raw_response)
+        except ValidationError:
+            # Occasionally wrapped in markdown fencing / a preamble sentence
+            # despite the system prompt — try pulling the JSON object out
+            # before giving up on this call entirely.
+            match = _JSON_OBJECT_PATTERN.search(raw_response)
+            if match:
+                try:
+                    parsed = OrchestratorDirective.model_validate_json(match.group())
+                except ValidationError:
+                    pass
 
     directive = _validate_directive(parsed, eligible_for_offer, retrieved_chunks)
 
     span = trace.get_current_span()
     span.set_attribute("orchestrator.tool", directive.tool or "silence")
-    if telemetry_config.message_content and directive.target_entry_key:
-        span.set_attribute("orchestrator.target_entry_key", directive.target_entry_key)
+    span.set_attribute("orchestrator.llm_call_failed", raw_response is None)
+    if telemetry_config.message_content:
+        if directive.target_entry_key:
+            span.set_attribute("orchestrator.target_entry_key", directive.target_entry_key)
+        record_io(span, input_data={"message_text": message_text, "eligible_for_offer": eligible_for_offer}, output_data=directive.model_dump())
 
     return directive

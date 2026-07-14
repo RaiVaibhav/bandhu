@@ -1,6 +1,6 @@
 import uuid
 
-from opentelemetry import trace
+from opentelemetry import baggage, context, trace
 from sqlalchemy import func, update
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -22,14 +22,29 @@ class SessionMiddleware(BaseHTTPMiddleware):
         session_id = await self._resolve_session_id(request)
         request.state.session_id = session_id
 
-        response = await call_next(request)
+        # Stamps langfuse.session.id into OTel baggage for the rest of this
+        # request's context — every @traced span downstream (langfuse_
+        # setup.py) reads it back and sets it on itself, which is what lets
+        # Langfuse group all of one session's traces together in its
+        # Sessions view instead of showing disconnected per-request traces.
+        token = context.attach(baggage.set_baggage("langfuse.session.id", str(session_id)))
+        try:
+            response = await call_next(request)
+        finally:
+            context.detach(token)
 
         response.set_cookie(
             key=COOKIE_NAME,
             value=str(session_id),
             max_age=COOKIE_MAX_AGE,
             httponly=True,  # JS on the page can't read or tamper with it
-            secure=True,  # only sent over HTTPS
+            # Derived from the actual request, not hardcoded True — a
+            # browser silently refuses to store a Secure cookie set over
+            # plain http, which is exactly local dev (frontend on
+            # localhost:5173 talking to this backend on localhost:8000,
+            # neither over TLS). Still Secure in production, since real
+            # traffic there is https.
+            secure=request.url.scheme == "https",
             samesite="lax",
         )
         return response

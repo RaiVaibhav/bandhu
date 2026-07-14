@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from opentelemetry import trace
@@ -18,11 +19,26 @@ async def write_turn(db: AsyncSession, session_id: UUID, user_content: str, assi
 
     Voice turns already arrive as transcribed text by this point — STT runs
     before stage 1, and raw audio is never persisted (§5) — so this function
-    doesn't need to know whether the turn originated as voice."""
+    doesn't need to know whether the turn originated as voice.
+
+    created_at is set explicitly in Python, two separate calls, rather than
+    left to the column's `server_default=func.now()` — Postgres's `now()`
+    returns transaction-start time, so both rows in the same commit get the
+    identical timestamp, and memory_read's `ORDER BY created_at` then has no
+    real tiebreaker (discovered 2026-07-14: GET /conversation was
+    intermittently returning the assistant reply before the user message it
+    replied to). Two Python-side timestamps are always genuinely ordered."""
     db.add_all(
         [
-            ConversationTurn(session_id=session_id, role="user", content=user_content),
-            ConversationTurn(session_id=session_id, role="assistant", content=assistant_content),
+            ConversationTurn(
+                session_id=session_id, role="user", content=user_content, created_at=datetime.now(timezone.utc)
+            ),
+            ConversationTurn(
+                session_id=session_id,
+                role="assistant",
+                content=assistant_content,
+                created_at=datetime.now(timezone.utc),
+            ),
         ]
     )
     await db.commit()

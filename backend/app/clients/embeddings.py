@@ -13,7 +13,17 @@ from app.models.content_entries import EMBEDDING_DIMENSION
 # multilingual across 26 languages including Hindi (the non-negotiable
 # requirement per vector-database.md §1), 8192-token context.
 client = (
-    AsyncOpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=settings.nvidia_api_key)
+    AsyncOpenAI(
+        base_url="https://integrate.api.nvidia.com/v1",
+        api_key=settings.nvidia_api_key,
+        # See clients/llm.py's client for why this exists — NIM has been
+        # observed to hang indefinitely on some calls rather than error.
+        timeout=30.0,
+        # Same reasoning as clients/llm.py: default max_retries=2 triples a
+        # timed-out call's wall-clock (~90s+) for no real benefit against a
+        # congested free-tier endpoint. Fail once, fast.
+        max_retries=0,
+    )
     if settings.nvidia_api_key
     else None
 )

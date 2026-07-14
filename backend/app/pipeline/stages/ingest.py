@@ -4,7 +4,7 @@ from opentelemetry import trace
 from pydantic import BaseModel
 
 from app.config import telemetry_config
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 InputMode = Literal["text", "voice"]
 
@@ -69,5 +69,6 @@ async def ingest(raw_text: str | None, *, input_mode: InputMode = "text", media_
     span.set_attribute("ingest.input_mode", input_mode)
     if telemetry_config.message_content:
         span.set_attribute("ingest.text", text)
+        record_io(span, input_data=raw_text, output_data={"text": text, "language": language})
 
     return NormalizedMessage(text=text, language=language, media_type="text", input_mode=input_mode)

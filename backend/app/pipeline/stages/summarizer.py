@@ -11,7 +11,7 @@ from app.config import telemetry_config
 from app.models.user_checkins import UserCheckin
 from app.models.user_memory_summary import UserMemorySummary
 from app.models.user_sessions import UserSession
-from app.telemetry.langfuse_setup import traced
+from app.telemetry.langfuse_setup import record_io, traced
 
 SUMMARIZER_SYSTEM_PROMPT = """You read a list of structured facts from someone's recent check-ins on a companion mental-health app and write a short rolling narrative capturing the overall pattern — mood trend, recurring themes, what's been offered and whether it helped. A few sentences, never a list, never a direct quote of anything the person said. This narrative is read later by another model deciding how to respond to this person; it is never shown to the person directly, so it can be plain and clinical-adjacent in a way a reply to them never could be.
 
@@ -105,6 +105,7 @@ async def summarize_session(db: AsyncSession, session_id: UUID) -> str | None:
 
     if telemetry_config.message_content:
         span.set_attribute("summarizer.summary_text", summary_text)
+        record_io(span, input_data=facts_text, output_data=summary_text)
 
     return summary_text
 
