@@ -1,0 +1,17 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  VITE_API_BASE_URL = "https://bandhu-0j9q.onrender.com"
+
+# Vite's own dev server and `vite preview` both fall back to app/index.html
+# for unmatched sub-paths (/app/response, /app/crisis) automatically — see
+# frontend/README.md's "Known gaps" section. Netlify needs this stated
+# explicitly, or a direct link/refresh on those routes 404s. Root (/) and
+# /privacy/ don't need this — they're real static pages at those exact
+# paths already.
+[[redirects]]
+  from = "/app/*"
+  to = "/app/index.html"
+  status = 200
