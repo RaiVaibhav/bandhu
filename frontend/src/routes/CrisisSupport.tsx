@@ -56,7 +56,7 @@ export default function CrisisSupport() {
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
-      <AppHeader back />
+      <AppHeader back="/" />
 
       <main className="flex flex-1 flex-col gap-stack-md px-edge-mobile pb-stack-lg">
         <div className="flex flex-col gap-2">

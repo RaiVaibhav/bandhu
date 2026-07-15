@@ -45,7 +45,7 @@ export default function Settings() {
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
-      <AppHeader back />
+      <AppHeader back="/" />
 
       <main className="flex flex-1 flex-col gap-stack-lg px-edge-mobile pb-stack-lg">
         <h1 className="font-heading text-xl font-semibold text-foreground">Settings</h1>

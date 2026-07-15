@@ -1,8 +1,10 @@
+import json
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -20,7 +22,7 @@ from app.middleware.session import SessionMiddleware
 from app.models.content_entries import ContentEntry
 from app.models.user_checkins import UserCheckin
 from app.models.user_sessions import UserSession
-from app.pipeline.orchestrator import run_pipeline
+from app.pipeline.orchestrator import run_pipeline, run_pipeline_stream
 from app.pipeline.stages.evaluator import evaluate_reply, should_sample
 from app.pipeline.stages.generate import generate_reply
 from app.pipeline.stages.guardrail_check import check_and_fallback
@@ -132,6 +134,62 @@ async def post_message(
         help_offer_type=result.help_offer_type,
         suggestion_entry_key=result.suggestion_entry_key,
     )
+
+
+def _sse(event: dict) -> str:
+    """One Server-Sent Events frame — see MDN's `text/event-stream` format.
+    A bare `data:` line (no `event:` field) is enough here since every
+    frame already carries its own `"type"` key for the frontend to switch
+    on; a distinct SSE `event:` name per type would just duplicate that."""
+    return f"data: {json.dumps(event)}\n\n"
+
+
+@app.post("/message/stream")
+@limiter.limit(PER_SESSION_LIMIT)
+@limiter.limit(PER_IP_LIMIT, key_func=get_remote_address)
+async def post_message_stream(
+    request: Request,
+    body: MessageRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Streaming twin of POST /message — same 12-stage pipeline
+    (orchestrator.py's run_pipeline_stream), but Generate's tokens reach
+    the client as they're produced instead of only after the full reply is
+    ready, same shape as any chat product's typing effect. The safety
+    guarantee that made this feel unsafe to do naively (stage 9's guardrail
+    needs the *complete* text before it can be trusted) is preserved by
+    running that same check incrementally on the growing buffer rather
+    than dropping it — see run_pipeline_stream's own docstring.
+
+    Not built on FastAPI's injected `BackgroundTasks` dependency, since
+    whether sampled evaluation should even run isn't known until the
+    pipeline's "done" event arrives partway through the generator — this
+    builds its own BackgroundTasks object and attaches it to the
+    StreamingResponse directly instead."""
+    background_tasks = BackgroundTasks()
+
+    async def event_stream():
+        async for event in run_pipeline_stream(db, request.state.session_id, body.text, input_mode="text"):
+            if event["type"] == "done":
+                result = event["result"]
+                if result.checkin_id is not None and should_sample():
+                    background_tasks.add_task(
+                        _run_evaluator_sample, result.checkin_id, body.text, result.response_text
+                    )
+                yield _sse(
+                    {
+                        "type": "done",
+                        "response": result.response_text,
+                        "crisis": result.crisis,
+                        "helplines": result.helplines,
+                        "help_offer_type": result.help_offer_type,
+                        "suggestion_entry_key": result.suggestion_entry_key,
+                    }
+                )
+            else:
+                yield _sse(event)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", background=background_tasks)
 
 
 class ThinkingTrapRequest(BaseModel):

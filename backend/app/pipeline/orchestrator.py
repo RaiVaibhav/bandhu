@@ -1,4 +1,6 @@
+from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from opentelemetry import trace
@@ -10,12 +12,12 @@ from app.models.user_sessions import UserSession
 from app.pipeline.stages.classify import ClassifyResult, classify
 from app.pipeline.stages.crisis_response import build_crisis_response
 from app.pipeline.stages.eligibility_gate import check_eligibility
-from app.pipeline.stages.generate import generate_reply
-from app.pipeline.stages.guardrail_check import check_and_fallback
+from app.pipeline.stages.generate import generate_reply, generate_reply_stream
+from app.pipeline.stages.guardrail_check import check_and_fallback, check_violations
 from app.pipeline.stages.ingest import InputMode, NormalizedMessage, ingest
 from app.pipeline.stages.memory_read import read_recent_turns, read_summary
 from app.pipeline.stages.memory_write import write_checkin, write_turn
-from app.pipeline.stages.orchestrator_judgment import judge
+from app.pipeline.stages.orchestrator_judgment import SILENCE, judge
 from app.pipeline.stages.redirect import get_redirect
 from app.pipeline.stages.retrieval import retrieve
 from app.pipeline.stages.safety_gate import SafetyGateResult, check_safety
@@ -127,6 +129,105 @@ async def run_pipeline(
         help_offer_type=directive.tool if is_help_offer else None,
         suggestion_entry_key=directive.target_entry_key if directive.tool == "offer_suggestion" else None,
     )
+
+
+@traced("pipeline.run_stream")
+async def run_pipeline_stream(
+    db: AsyncSession,
+    session_id: UUID,
+    raw_text: str,
+    *,
+    input_mode: InputMode = "text",
+) -> AsyncIterator[dict[str, Any]]:
+    """Streaming twin of run_pipeline, for main.py's POST /message/stream.
+    Stages 1-7 (Safety gate through Orchestrator judgment) run exactly as
+    before, synchronously — none of that is shown to the person
+    incrementally, so there's nothing to gain by streaming it. Only stage 8
+    (Generate) actually streams token deltas to the caller; the crisis and
+    special-case branches are fixed, already-fully-known vetted copy, so
+    they're yielded as a single delta same as a non-streamed response
+    would look, just wrapped in the same event protocol for a uniform
+    frontend consumer.
+
+    Yields dicts of one of three shapes:
+    - {"type": "delta", "text": str} — append this to what's on screen.
+    - {"type": "reset"} — the guardrail tripped mid-stream (stage 9's
+      check now runs incrementally, on the accumulating buffer, instead of
+      once at the end — see check_violations below); the caller must
+      clear whatever partial text it's shown so far. Deltas for the
+      fallback acknowledgment-only reply follow immediately after.
+    - {"type": "done", "result": PipelineResult} — terminal event, exactly
+      the same payload run_pipeline would have returned.
+
+    Guardrail note: because check_violations is a cheap regex/keyword
+    check (not a second LLM call), it's safe to re-run on every delta
+    without adding meaningful latency — this is what lets real token
+    streaming coexist with the existing safety gate instead of forcing a
+    choice between them. The rule set itself is unchanged from
+    check_and_fallback's own non-streamed use of the same function."""
+    normalized = await ingest(raw_text, input_mode=input_mode)
+
+    recent_turns = await read_recent_turns(db, session_id)
+    session = await db.get(UserSession, session_id)
+    last_crisis_card_shown_at = session.last_crisis_card_shown_at if session else None
+
+    safety_result = await check_safety(db, normalized.text, recent_turns, last_crisis_card_shown_at, normalized.language)
+    if safety_result.triggered:
+        result = await _handle_crisis(db, session_id, normalized, recent_turns, safety_result)
+        yield {"type": "delta", "text": result.response_text}
+        yield {"type": "done", "result": result}
+        return
+
+    summary_text = await read_summary(db, session_id)
+
+    tags = await classify(normalized.text)
+    if tags.special_case is not None:
+        result = await _handle_special_case(db, session_id, normalized, recent_turns, summary_text, tags)
+        yield {"type": "delta", "text": result.response_text}
+        yield {"type": "done", "result": result}
+        return
+
+    eligible = await check_eligibility(db, session_id)
+    retrieved_chunks = await retrieve(db, normalized.text, [tags.category], normalized.language) if tags.category else []
+    directive = await judge(normalized.text, tags, summary_text, recent_turns, eligible, retrieved_chunks)
+
+    buffer_parts: list[str] = []
+    violation: str | None = None
+    async for delta in generate_reply_stream(normalized.text, recent_turns, summary_text, directive, retrieved_chunks):
+        buffer_parts.append(delta)
+        violation = check_violations("".join(buffer_parts))
+        if violation is not None:
+            break
+        yield {"type": "delta", "text": delta}
+
+    if violation is not None:
+        trace.get_current_span().set_attribute("guardrail.tripped_mid_stream", True)
+        trace.get_current_span().set_attribute("guardrail.violation_type", violation)
+        final_text = await generate_reply(normalized.text, recent_turns, summary_text, SILENCE, [])
+        yield {"type": "reset"}
+        yield {"type": "delta", "text": final_text}
+    else:
+        final_text = "".join(buffer_parts)
+
+    is_help_offer = directive.tool in ("offer_suggestion", "notice_thinking_trap")
+    await write_turn(db, session_id, normalized.text, final_text)
+    checkin_id = await write_checkin(
+        db,
+        session_id,
+        mood_tag=tags.emotion,
+        theme=tags.category,
+        suggestion_entry_key=directive.target_entry_key if directive.tool == "offer_suggestion" else None,
+        is_help_offer=is_help_offer,
+        input_mode=normalized.input_mode,
+    )
+
+    result = PipelineResult(
+        response_text=final_text,
+        checkin_id=checkin_id,
+        help_offer_type=directive.tool if is_help_offer else None,
+        suggestion_entry_key=directive.target_entry_key if directive.tool == "offer_suggestion" else None,
+    )
+    yield {"type": "done", "result": result}
 
 
 async def _handle_crisis(

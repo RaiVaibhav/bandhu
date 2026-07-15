@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 from openai import AsyncOpenAI
 
 from app.config import settings
@@ -96,3 +98,36 @@ async def generate(model: str, system: str, messages: list[dict], max_tokens: in
         max_tokens=max_tokens,
     )
     return response.choices[0].message.content
+
+
+async def generate_stream(
+    model: str, system: str, messages: list[dict], max_tokens: int = 150
+) -> AsyncIterator[str]:
+    """Same call shape as generate(), but yields text deltas as they arrive
+    instead of waiting for the full completion. Only Generate (stage 8)
+    uses this — every other stage's output is either never shown to the
+    person directly (Classify, Orchestrator judgment) or is fixed vetted
+    copy already fully known upfront (crisis/special-case redirects), so
+    there's nothing for those to usefully stream."""
+    if client is None:
+        raise RuntimeError("NVIDIA_API_KEY is not configured")
+
+    full_messages = [{"role": "system", "content": system}, *messages]
+
+    stream = await client.chat.completions.create(
+        model=model,
+        messages=full_messages,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    async for chunk in stream:
+        # The terminating chunk (and any usage-only chunk, if the caller
+        # requests token usage in a stream) carries an empty choices list —
+        # a bare chunk.choices[0] index crashes on exactly the chunk that
+        # signals "done" (found 2026-07-15 via a real streamed call, not
+        # assumed from docs).
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta

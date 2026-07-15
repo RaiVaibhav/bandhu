@@ -143,6 +143,16 @@
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* Every Tailwind text-* utility is rem-based, so this one rule scales
+     all type across the whole app (Home, Response, ThinkingTrap, Breathing,
+     Looking Back, Settings, Crisis Support, Welcome, Privacy) proportionally
+     from Tailwind's 16px default, instead of hand-tuning font sizes screen
+     by screen. */
+  html {
+    font-size: 14px;
+  }
+
   body {
     @apply bg-muted text-foreground font-sans;
   }
@@ -207,6 +217,24 @@
   .animate-pebble-3 {
     animation: bandhu-pebble-3 8s ease-in-out infinite;
   }
+
+  /* The companion bubble's "Listening…" state (Response.tsx) while waiting
+     on the first token — a moving light sweep across the text itself,
+     rather than a separate spinner icon, matching the shimmer-text pattern
+     most chat products use for "thinking"/"typing" states. */
+  .animate-text-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--muted-foreground) 30%,
+      var(--foreground) 50%,
+      var(--muted-foreground) 70%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: bandhu-text-shimmer 1.8s linear infinite;
+  }
 }
 
 @keyframes bandhu-breathe-bg {
@@ -232,6 +260,11 @@
 @keyframes bandhu-pebble-3 {
   0%, 100% { transform: translate(0, 0); }
   50% { transform: translate(5px, -20px); }
+}
+
+@keyframes bandhu-text-shimmer {
+  0% { background-position: 150% 0; }
+  100% { background-position: -50% 0; }
 }
 
 /* Ported from Stitch's "Immersive Breathing Experience" mockup — see

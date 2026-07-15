@@ -77,6 +77,75 @@ export async function sendMessage(text: string): Promise<MessageApiResponse> {
   return res.json();
 }
 
+export type MessageStreamEvent =
+  | { type: "delta"; text: string }
+  // The guardrail (stage 9) tripped mid-stream — see backend/app/pipeline/
+  // orchestrator.py's run_pipeline_stream. The caller must discard
+  // whatever partial text it's shown so far; delta events for the
+  // fallback acknowledgment-only reply follow immediately after this.
+  | { type: "reset" }
+  | {
+      type: "done";
+      response: string;
+      crisis: boolean;
+      helplines: Helpline[];
+      help_offer_type: string | null;
+      suggestion_entry_key: string | null;
+    };
+
+/**
+ * Streaming twin of sendMessage — same pipeline (POST /message/stream),
+ * but Generate's reply arrives as a sequence of text deltas instead of one
+ * blocking response, so the caller can render it appearing progressively,
+ * the same way any chat product's typing effect works. Not built on
+ * EventSource (browser SSE support is GET-only, and this needs a JSON
+ * POST body for the session-scoped message text) — instead reads the
+ * response body's own stream directly and splits it on SSE's blank-line
+ * frame delimiter.
+ */
+export async function streamMessage(text: string, onEvent: (event: MessageStreamEvent) => void): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/message/stream`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  } catch {
+    throw new ApiError("Couldn't reach Bandhu's backend — check your connection.");
+  }
+
+  if (res.status === 429) {
+    throw new ApiError("Too many check-ins too quickly — give it a moment.", 429);
+  }
+  if (!res.ok || !res.body) {
+    throw new ApiError(`Bandhu's backend had trouble with that (${res.status}).`, res.status);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE frames are separated by a blank line; the last split segment may
+    // be a frame still being written to, so it stays in the buffer for the
+    // next chunk instead of being parsed early.
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+
+    for (const frame of frames) {
+      const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
+      if (!dataLine) continue;
+      onEvent(JSON.parse(dataLine.slice("data: ".length)) as MessageStreamEvent);
+    }
+  }
+}
+
 /** Logs a direct "Breathe" tap — no message, no LLM call, see
  * backend/app/main.py's post_breathe. */
 export async function postBreathe(): Promise<{ intro_text: string }> {

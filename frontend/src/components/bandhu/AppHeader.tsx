@@ -6,8 +6,17 @@ import { Button } from "@/components/ui/button";
  * describes as "always reachable, not part of the check-in sequence...
  * sit behind the bottom nav / menu." There's no bottom nav built yet, so
  * these two icon buttons on Home are the actual persistent entry point for
- * now, not a placeholder — see frontend/README.md. */
-export function AppHeader({ back, menu }: { back?: boolean; menu?: boolean }) {
+ * now, not a placeholder — see frontend/README.md.
+ *
+ * `back` takes the actual destination route, not a bare boolean — it used
+ * to call `navigate(-1)` (raw browser history), which breaks the moment
+ * this screen isn't reached the way the code assumes: a direct link, a
+ * refresh that resets the SPA's in-memory history stack, or a route
+ * reached via the client-side pushState navigation this app's own routes
+ * use internally can all leave nothing meaningful to go "back" to, popping
+ * the person somewhere unrelated (or out of the app) instead of to the
+ * screen that actually, logically precedes this one. */
+export function AppHeader({ back, menu }: { back?: string; menu?: boolean }) {
   const navigate = useNavigate();
 
   return (
@@ -17,7 +26,7 @@ export function AppHeader({ back, menu }: { back?: boolean; menu?: boolean }) {
           variant="ghost"
           size="icon"
           aria-label="Back"
-          onClick={() => navigate(-1)}
+          onClick={() => navigate(back)}
           className="-ml-2"
         >
           <ChevronLeft className="size-5" />

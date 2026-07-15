@@ -1,7 +1,10 @@
+from collections.abc import AsyncIterator
+
 from opentelemetry import trace
 
 from app.clients.llm import GENERATE_MODEL
 from app.clients.llm import generate as llm_generate
+from app.clients.llm import generate_stream as llm_generate_stream
 from app.config import telemetry_config
 from app.pipeline.stages.orchestrator_judgment import OrchestratorDirective
 from app.pipeline.stages.retrieval import RetrievedChunk
@@ -67,6 +70,38 @@ def _directive_instruction(directive: OrchestratorDirective, retrieved_chunks: l
     return "This turn: acknowledgment only."  # unreachable given OrchestratorDirective's Literal type
 
 
+def _build_messages_and_system(
+    message_text: str,
+    recent_turns: list[dict],
+    summary_text: str | None,
+    directive: OrchestratorDirective,
+    retrieved_chunks: list[RetrievedChunk],
+) -> tuple[list[dict], str]:
+    """Shared by generate_reply and generate_reply_stream — both need the
+    exact same messages/system split, just differ in whether they await one
+    completion or iterate a stream of deltas."""
+    messages = [{"role": t["role"], "content": t["content"]} for t in recent_turns]
+    messages.append({"role": "user", "content": message_text})
+
+    system_prompt = f"""{BANDHU_PERSONA_AND_CONSTRAINTS}
+
+Rolling context on this person — for your own awareness only, never to be recited back to them:
+{summary_text or "No prior context yet."}
+
+{_directive_instruction(directive, retrieved_chunks)}"""
+
+    return messages, system_prompt
+
+
+def _record_generate_span(directive: OrchestratorDirective, message_text: str, response_text: str) -> None:
+    span = trace.get_current_span()
+    span.set_attribute("generate.tool", directive.tool or "silence")
+    span.set_attribute("generate.response_length_chars", len(response_text))
+    if telemetry_config.message_content:
+        span.set_attribute("generate.response_text", response_text)
+        record_io(span, input_data={"message_text": message_text, "directive": directive.tool}, output_data=response_text)
+
+
 @traced("pipeline.generate")
 async def generate_reply(
     message_text: str,
@@ -87,15 +122,9 @@ async def generate_reply(
     (main.py's POST /thinking-trap) — that's the one turn meant to run
     longer than a normal acknowledgment, per its own directive instruction
     below telling the model exactly that."""
-    messages = [{"role": t["role"], "content": t["content"]} for t in recent_turns]
-    messages.append({"role": "user", "content": message_text})
-
-    system_prompt = f"""{BANDHU_PERSONA_AND_CONSTRAINTS}
-
-Rolling context on this person — for your own awareness only, never to be recited back to them:
-{summary_text or "No prior context yet."}
-
-{_directive_instruction(directive, retrieved_chunks)}"""
+    messages, system_prompt = _build_messages_and_system(
+        message_text, recent_turns, summary_text, directive, retrieved_chunks
+    )
 
     response_text = await llm_generate(
         model=GENERATE_MODEL,
@@ -104,11 +133,35 @@ Rolling context on this person — for your own awareness only, never to be reci
         max_tokens=max_tokens,
     )
 
-    span = trace.get_current_span()
-    span.set_attribute("generate.tool", directive.tool or "silence")
-    span.set_attribute("generate.response_length_chars", len(response_text))
-    if telemetry_config.message_content:
-        span.set_attribute("generate.response_text", response_text)
-        record_io(span, input_data={"message_text": message_text, "directive": directive.tool}, output_data=response_text)
-
+    _record_generate_span(directive, message_text, response_text)
     return response_text
+
+
+@traced("pipeline.generate_stream")
+async def generate_reply_stream(
+    message_text: str,
+    recent_turns: list[dict],
+    summary_text: str | None,
+    directive: OrchestratorDirective,
+    retrieved_chunks: list[RetrievedChunk],
+    max_tokens: int = MAX_TOKENS,
+) -> AsyncIterator[str]:
+    """Streaming twin of generate_reply — same instruction-building, same
+    span attributes recorded at the end, just yields text deltas as they
+    arrive instead of returning once. Used by orchestrator.py's
+    run_pipeline_stream, which is the only caller that needs deltas rather
+    than a single string; every other caller (guardrail_check.py's own
+    SILENCE fallback regeneration, /thinking-trap) still wants one
+    complete string and should keep using generate_reply."""
+    messages, system_prompt = _build_messages_and_system(
+        message_text, recent_turns, summary_text, directive, retrieved_chunks
+    )
+
+    full_text_parts: list[str] = []
+    async for delta in llm_generate_stream(
+        model=GENERATE_MODEL, system=system_prompt, messages=messages, max_tokens=max_tokens
+    ):
+        full_text_parts.append(delta)
+        yield delta
+
+    _record_generate_span(directive, message_text, "".join(full_text_parts))

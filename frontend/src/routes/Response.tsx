@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Loader2, Mic } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/bandhu/AppHeader";
 import { ChatBubble } from "@/components/bandhu/ChatBubble";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, getConversation, sendMessage } from "@/lib/apiClient";
+import { ApiError, getConversation, streamMessage, type Helpline } from "@/lib/apiClient";
 
 type ResponseState = {
   message?: string;
@@ -48,40 +48,61 @@ export default function Response() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = (location.state ?? {}) as ResponseState;
+  // Home now hands off only the raw text, before any backend call — this
+  // route fires the actual streamed request itself (see the mount effect
+  // below), which is what lets the very first exchange stream in too,
+  // instead of Home blocking on a full round-trip before this screen even
+  // appears. ThinkingTrap still hands off a fully-resolved {message,
+  // response} pair (its own POST /thinking-trap isn't streamed), so that
+  // case is seeded as already-complete and never re-sent here.
+  const isFreshSend = Boolean(state.message) && !state.response;
 
   const [turns, setTurns] = useState<Turn[]>(() => {
+    if (!state.message && !state.response) return [{ role: "bot", text: FALLBACK_RESPONSE }];
     const seeded: Turn[] = [];
     if (state.message) seeded.push({ role: "user", text: state.message });
-    seeded.push({
-      role: "bot",
-      text: state.response ?? FALLBACK_RESPONSE,
-      helpOfferType: state.helpOfferType,
-      suggestionEntryKey: state.suggestionEntryKey,
-    });
+    if (state.response) {
+      seeded.push({
+        role: "bot",
+        text: state.response,
+        helpOfferType: state.helpOfferType,
+        suggestionEntryKey: state.suggestionEntryKey,
+      });
+    }
     return seeded;
   });
+  // Text of the in-progress companion reply, growing as delta events
+  // arrive — null when nothing is streaming right now. Empty string (not
+  // null) while waiting on the first delta, so the loading spinner and the
+  // growing text are really the same bubble, not a swap between two.
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFailedText, setLastFailedText] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const hasSentInitialRef = useRef(false);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [turns]);
+  }, [turns, streamingText]);
 
-  // Rehydrates from what the backend actually persisted — the router state
-  // Home hands off only ever seeds the FIRST exchange, and every turn added
-  // after that lived purely in this component's state, gone on any refresh
-  // or direct load. GET /conversation is the same source of truth Generate
-  // itself reads from, so a refresh now shows the real thread instead of
-  // silently losing everything past turn one. Preserves the just-delivered
+  // Rehydrates from what the backend actually persisted — every turn added
+  // in a prior visit to this screen lived purely in component state, gone
+  // on any refresh or direct load. GET /conversation is the same source of
+  // truth Generate itself reads from, so a refresh now shows the real
+  // thread instead of silently losing history. Skipped entirely on a fresh
+  // send from Home (isFreshSend): the message hasn't been persisted
+  // server-side yet at mount time, so rehydrating here would race the
+  // in-flight stream and can overwrite the optimistic user bubble with
+  // older history that doesn't include it yet — nothing to reconcile until
+  // the stream's own "done" event lands. Preserves the just-delivered
   // helpOfferType (not stored server-side) by matching the fetched last
-  // turn's text against what Home/ThinkingTrap just handed off — a stale
-  // match after a real refresh just means the quiet line doesn't
-  // resurface, which is fine, it's a live-session affordance, not a
-  // permanent record.
+  // turn's text against what ThinkingTrap just handed off — a stale match
+  // after a real refresh just means the quiet line doesn't resurface,
+  // which is fine, it's a live-session affordance, not a permanent record.
   useEffect(() => {
+    if (isFreshSend) return;
     let cancelled = false;
     getConversation()
       .then((fetched) => {
@@ -112,28 +133,65 @@ export default function Response() {
     setIsSubmitting(true);
     setError(null);
     setLastFailedText(null);
+    setStreamingText("");
     try {
-      const result = await sendMessage(text);
-      if (result.crisis) {
-        navigate("/crisis", { state: { helplines: result.helplines } });
+      let receivedDone = false;
+      let finalResponse = "";
+      let finalCrisis = false;
+      let finalHelplines: Helpline[] = [];
+      let finalHelpOfferType: string | null = null;
+      let finalSuggestionEntryKey: string | null = null;
+
+      await streamMessage(text, (event) => {
+        if (event.type === "delta") {
+          setStreamingText((prev) => (prev ?? "") + event.text);
+        } else if (event.type === "reset") {
+          setStreamingText("");
+        } else if (event.type === "done") {
+          receivedDone = true;
+          finalResponse = event.response;
+          finalCrisis = event.crisis;
+          finalHelplines = event.helplines;
+          finalHelpOfferType = event.help_offer_type;
+          finalSuggestionEntryKey = event.suggestion_entry_key;
+        }
+      });
+
+      // The connection closed before a "done" event arrived — whatever's
+      // in streamingText is incomplete and shouldn't be treated as the
+      // real reply.
+      if (!receivedDone) throw new ApiError("Lost connection partway through — mind trying again?");
+
+      if (finalCrisis) {
+        navigate("/crisis", { state: { helplines: finalHelplines } });
         return;
       }
       setTurns((prev) => [
         ...prev,
-        {
-          role: "bot",
-          text: result.response,
-          helpOfferType: result.help_offer_type,
-          suggestionEntryKey: result.suggestion_entry_key,
-        },
+        { role: "bot", text: finalResponse, helpOfferType: finalHelpOfferType, suggestionEntryKey: finalSuggestionEntryKey },
       ]);
+      setStreamingText(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong — mind trying again?");
       setLastFailedText(text);
+      setStreamingText(null);
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  // Fires the actual send for a fresh hand-off from Home — turns is already
+  // seeded with the user's bubble above, so this only needs to produce the
+  // reply. Guarded by a ref (not just the isFreshSend check) because
+  // StrictMode double-invokes effects in dev; without the ref, that would
+  // fire two real requests for the same message.
+  useEffect(() => {
+    if (isFreshSend && !hasSentInitialRef.current) {
+      hasSentInitialRef.current = true;
+      void send(state.message!);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleSend() {
     const text = draft.trim();
@@ -150,7 +208,7 @@ export default function Response() {
 
   return (
     <div className="flex h-svh flex-col bg-background">
-      <AppHeader back />
+      <AppHeader back="/" />
 
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-edge-mobile pb-stack-md">
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-2">
@@ -177,9 +235,13 @@ export default function Response() {
               )}
             </div>
           ))}
-          {isSubmitting && (
+          {streamingText !== null && (
             <ChatBubble variant="companion">
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              {streamingText.length > 0 ? (
+                streamingText
+              ) : (
+                <span className="animate-text-shimmer font-medium">Listening…</span>
+              )}
             </ChatBubble>
           )}
           <div ref={endRef} />
@@ -208,8 +270,7 @@ export default function Response() {
             disabled={isSubmitting}
             className="min-h-16 resize-none border-none bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
           />
-          <div className="flex items-center justify-between">
-            <Mic className="size-5 text-muted-foreground" aria-hidden />
+          <div className="flex items-center justify-end">
             <Button
               size="lg"
               className="rounded-full px-6"

@@ -73,7 +73,10 @@ DEPENDENCY_REINFORCEMENT_PATTERNS = [
 ]
 
 
-def _check_violations(text: str) -> str | None:
+def check_violations(text: str) -> str | None:
+    """Public per stage — orchestrator.py's streaming path (stage 8 stream)
+    calls this incrementally on the accumulating buffer as tokens arrive, as
+    well as check_and_fallback below calling it once on the complete text."""
     lowered = text.lower()
 
     if any(term in lowered for term in DIAGNOSTIC_LABEL_TERMS):
@@ -104,7 +107,7 @@ async def check_and_fallback(
     review." The violation type is always logged (never the response text
     itself — see telemetry content-control design in langfuse_setup.py),
     which is exactly the review trail that line calls for."""
-    violation = _check_violations(response_text)
+    violation = check_violations(response_text)
 
     span = trace.get_current_span()
     span.set_attribute("guardrail.passed", violation is None)

@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import functools
+import inspect
 import json
 import logging
 
@@ -91,6 +92,20 @@ def traced(span_name: str):
     onto every span, from every source, at start time."""
 
     def decorator(fn):
+        if inspect.isasyncgenfunction(fn):
+            # Streaming stages (generate.py's generate_reply_stream) yield
+            # repeatedly rather than returning once — the span has to stay
+            # open across the whole iteration, not just the call that
+            # creates the generator object (which returns before the
+            # generator body ever runs a single line).
+            @functools.wraps(fn)
+            async def asyncgen_wrapper(*args, **kwargs):
+                with tracer.start_as_current_span(span_name):
+                    async for item in fn(*args, **kwargs):
+                        yield item
+
+            return asyncgen_wrapper
+
         if asyncio.iscoroutinefunction(fn):
 
             @functools.wraps(fn)

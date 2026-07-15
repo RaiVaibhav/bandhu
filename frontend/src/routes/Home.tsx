@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Loader2, PenLine, Music, Send, Wind } from "lucide-react";
+import { PenLine, Music, Send, Wind } from "lucide-react";
 import { AppHeader } from "@/components/bandhu/AppHeader";
 import { MoodTapRow, type Mood } from "@/components/bandhu/MoodTapRow";
-import { ApiError, sendMessage } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 
 // Served from public/mascot — a plain URL, not a module import, since
@@ -44,38 +43,21 @@ export default function Home() {
   const navigate = useNavigate();
   const [message, setMessage] = useState("");
   const [mood, setMood] = useState<Mood | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // A mood tap alone (no text) is a valid, complete check-in — see
   // pipeline.html's "mood-tap only" stress-test case.
-  const canShare = !isSubmitting && (message.trim().length > 0 || mood !== null);
+  const canShare = message.trim().length > 0 || mood !== null;
 
-  async function handleShare() {
+  // Doesn't call the backend itself — hands the raw text off to Response,
+  // which fires the actual streamed POST /message/stream on mount. This is
+  // what lets the very first exchange stream in too, the same way every
+  // later turn already does, instead of Home blocking on a full non-streamed
+  // round-trip before the conversation view even appears.
+  function handleShare() {
     if (!canShare) return;
     const textToSend = message.trim() || (mood ? MOOD_ONLY_TEXT[mood] : "");
     if (!textToSend) return;
-
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      const result = await sendMessage(textToSend);
-      if (result.crisis) {
-        navigate("/crisis", { state: { helplines: result.helplines } });
-        return;
-      }
-      navigate("/response", {
-        state: {
-          message: textToSend,
-          response: result.response,
-          helpOfferType: result.help_offer_type,
-          suggestionEntryKey: result.suggestion_entry_key,
-        },
-      });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong — mind trying again?");
-      setIsSubmitting(false);
-    }
+    navigate("/response", { state: { message: textToSend } });
   }
 
   return (
@@ -127,7 +109,6 @@ export default function Home() {
                 if (e.key === "Enter") handleShare();
               }}
               placeholder="Share how you're feeling…"
-              disabled={isSubmitting}
               className="w-full rounded-full border-none bg-white/60 py-4 pl-6 pr-14 text-base shadow-sm backdrop-blur-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
             <button
@@ -137,18 +118,9 @@ export default function Home() {
               aria-label="Share"
               className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              <Send className="size-4" />
             </button>
           </div>
-
-          {error && (
-            <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <span>{error}</span>
-              <button type="button" onClick={handleShare} className="shrink-0 font-medium underline">
-                Retry
-              </button>
-            </div>
-          )}
 
           {/* Dev-only design preview — real crisis detection is backend
               logic (app/pipeline/stages/safety_gate.py); safety_patterns
@@ -161,7 +133,7 @@ export default function Home() {
               onClick={() => navigate("/crisis")}
               className="self-center text-[10.5px] text-muted-foreground/50 underline"
             >
-              View Crisis Support (design preview)
+              View Crisis Support
             </button>
           )}
         </div>
