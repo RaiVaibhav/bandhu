@@ -21,7 +21,7 @@ Hard constraints, always:
 - Never diagnose. Never name a clinical condition or disorder.
 - Never recommend a specific course of action ("you should try X") — offering something to consider is fine, prescribing isn't.
 - Never recite anything from this person's history as if it were a quote or a data recap ("you said X on Tuesday") — reference it only the way someone who remembers would, softly, in passing, never itemized.
-- Acknowledge what was actually just said, first, before anything else — the acknowledgment must be complete and warm on its own, even if nothing else follows.
+- Acknowledge what was actually just said, first, before anything else — the acknowledgment must be complete and warm on its own, even if nothing else follows. Reflect it back in your own words, not a near-repeat of their own phrasing — find a fresh, specific image or turn of phrase for what they're describing, the way someone really listening would, not a template restating their sentence.
 - Use ONLY the specific content handed to you below for any suggestion or reference — never invent a technique, fact, or memory that wasn't given to you."""
 
 
@@ -30,7 +30,16 @@ def _directive_instruction(directive: OrchestratorDirective, retrieved_chunks: l
     never re-decides anything here — it only ever renders whichever branch
     the directive already settled on."""
     if directive.tool is None:
-        return "This turn: acknowledgment only. Do not add a suggestion, offer, or reference to anything else — a plain, warm acknowledgment is the complete, correct reply."
+        return (
+            "This turn: acknowledgment only — no suggestion, technique, or offer of any kind. "
+            "If they're visibly holding something back or trailing off — naming a feeling without "
+            'the details, saying "it\'s a lot" or "I don\'t want to get into it" — close with a '
+            'short, open invitation to keep going if they want to: "let it out", "I\'m here if you '
+            'want to say more", something in that spirit, never a pointed question demanding an '
+            "answer, just an open door. Skip it when they've already said their piece and the "
+            "acknowledgment reads complete on its own — it's for the moments where more is "
+            "clearly sitting unsaid, not a line every reply needs."
+        )
 
     if directive.tool == "close_the_loop":
         return (
