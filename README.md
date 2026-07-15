@@ -7,6 +7,7 @@ A companion-first mental health check-in app for India — texting a friend, not
 **Live:**
 - Frontend — https://bandhu-companion.netlify.app
 - Backend — https://bandhu-0j9q.onrender.com (`/health`)
+- Engineering Docs - https://raivaibhav.github.io/bandhu/
 
 **Read next:**
 - [SPEC.md](SPEC.md) — the original product spec: why this, why now, what it will/won't do
