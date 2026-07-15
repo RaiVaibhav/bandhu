@@ -18,7 +18,13 @@ def _to_async_url(url: str) -> str:
 
 
 engine = (
-    create_async_engine(_to_async_url(settings.database_url), echo=False)
+    # pool_pre_ping: Supabase's pooler silently closes idle connections
+    # server-side well before SQLAlchemy's own pool would recycle them —
+    # confirmed directly via a live 500 (psycopg.OperationalError: "server
+    # closed the connection unexpectedly") on a plain session-row insert.
+    # Without this, a checked-out dead connection fails outright instead of
+    # SQLAlchemy transparently discarding and reopening it first.
+    create_async_engine(_to_async_url(settings.database_url), echo=False, pool_pre_ping=True, pool_recycle=300)
     if settings.database_url
     else None
 )

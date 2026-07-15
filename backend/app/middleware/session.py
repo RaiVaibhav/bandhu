@@ -33,19 +33,26 @@ class SessionMiddleware(BaseHTTPMiddleware):
         finally:
             context.detach(token)
 
+        # Deployed frontend (Netlify) and backend (Render) sit on different
+        # registrable domains — every request between them is genuinely
+        # cross-site, not just cross-port like local dev. SameSite=Lax
+        # cookies aren't usable there at all: confirmed directly (real
+        # browser context, real prod URLs) that the browser doesn't even
+        # store bandhu_sid after the response, so every request minted a
+        # fresh anonymous session server-side — no conversation memory, no
+        # check-in history, Looking Back always empty. SameSite=None is the
+        # only setting that survives a cross-site fetch, but it requires
+        # Secure — browsers reject it otherwise — which local http dev can't
+        # satisfy, hence the scheme-based branch below (matches this file's
+        # existing secure= derivation for the same http-vs-https reason).
+        is_https = request.url.scheme == "https"
         response.set_cookie(
             key=COOKIE_NAME,
             value=str(session_id),
             max_age=COOKIE_MAX_AGE,
             httponly=True,  # JS on the page can't read or tamper with it
-            # Derived from the actual request, not hardcoded True — a
-            # browser silently refuses to store a Secure cookie set over
-            # plain http, which is exactly local dev (frontend on
-            # localhost:5173 talking to this backend on localhost:8000,
-            # neither over TLS). Still Secure in production, since real
-            # traffic there is https.
-            secure=request.url.scheme == "https",
-            samesite="lax",
+            secure=is_https,
+            samesite="none" if is_https else "lax",
         )
         return response
 

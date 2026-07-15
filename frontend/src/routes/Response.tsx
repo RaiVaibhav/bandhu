@@ -87,22 +87,21 @@ export default function Response() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [turns, streamingText]);
 
-  // Rehydrates from what the backend actually persisted — every turn added
-  // in a prior visit to this screen lived purely in component state, gone
-  // on any refresh or direct load. GET /conversation is the same source of
-  // truth Generate itself reads from, so a refresh now shows the real
-  // thread instead of silently losing history. Skipped entirely on a fresh
-  // send from Home (isFreshSend): the message hasn't been persisted
-  // server-side yet at mount time, so rehydrating here would race the
-  // in-flight stream and can overwrite the optimistic user bubble with
-  // older history that doesn't include it yet — nothing to reconcile until
-  // the stream's own "done" event lands. Preserves the just-delivered
-  // helpOfferType (not stored server-side) by matching the fetched last
-  // turn's text against what ThinkingTrap just handed off — a stale match
-  // after a real refresh just means the quiet line doesn't resurface,
-  // which is fine, it's a live-session affordance, not a permanent record.
+  // Rehydrates from what the backend actually persisted — but ONLY for a
+  // genuine direct load (no router state at all, e.g. a refresh), which is
+  // the one case with nothing already known to show. Both hand-off shapes
+  // already carry everything this screen needs locally: a fresh send from
+  // Home (isFreshSend) hasn't been persisted server-side yet at mount time,
+  // so rehydrating here would race the in-flight stream and overwrite the
+  // optimistic user bubble with older history that doesn't include it yet;
+  // and ThinkingTrap's already-resolved {message, response} pair is, per
+  // its own hand-off contract, already complete — re-fetching here pulls in
+  // this session's ENTIRE prior history underneath it instead of just the
+  // one exchange that was just completed, which reads as old messages
+  // suddenly reappearing rather than a continuing conversation. Bounded to
+  // "no state.message at all" rather than isFreshSend alone.
   useEffect(() => {
-    if (isFreshSend) return;
+    if (state.message) return;
     let cancelled = false;
     getConversation()
       .then((fetched) => {
@@ -111,11 +110,6 @@ export default function Response() {
           role: t.role === "user" ? "user" : "bot",
           text: t.content,
         }));
-        const last = mapped[mapped.length - 1];
-        if (last?.role === "bot" && last.text === state.response && state.helpOfferType) {
-          last.helpOfferType = state.helpOfferType;
-          last.suggestionEntryKey = state.suggestionEntryKey;
-        }
         setTurns(mapped);
       })
       .catch(() => {
