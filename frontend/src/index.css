@@ -144,7 +144,18 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-muted text-foreground font-sans;
+  }
+
+  /* Bandhu is a mobile-focused app, not a responsive desktop layout — past
+     phone width, the app frame stays capped and centers instead of
+     stretching edge-to-edge. #root is the React SPA mount (app/index.html);
+     #welcome-root is the static Welcome page's own root div. The privacy
+     page constrains its own content directly (privacy/index.html) since it
+     has no single full-height root element to target the same way. */
+  #root,
+  #welcome-root {
+    @apply bg-background mx-auto min-h-svh w-full max-w-[480px];
   }
 }
 
